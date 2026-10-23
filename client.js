@@ -1,0 +1,870 @@
+/**
+ * Session Hub — the Client half.
+ *
+ * A frame-wide floating island pinned to the middle of the top edge. It is
+ * rendered into `shell.overlay` (a list slot that sits above every column and
+ * outside their scroll containers) and subscribes to three slot-standard
+ * sources only:
+ *
+ *   - `useSessions`        Session catalog: ids, metadata, main-view ownership
+ *   - `useSessionStatus`   Live running / completion-unread facts per Session
+ *   - `useWorkspaces`      Workspace titles and the archive set
+ *
+ * Clicking a chip switches the main view through `ctx.uiWorkspace.openSession`;
+ * opening a Session through the main view is also what clears its unread
+ * completion flag, so the island has no write path of its own.
+ */
+
+window.__ModuleLoader__.load({
+  id: 'dsh-session-hub',
+  factory(require) {
+    const React = require('react');
+    const h = React.createElement;
+
+const NS = 'session-hub-island';
+
+const EN = {
+  pillLabel: 'Session hub',
+  triggerTitle: 'Show sessions in progress',
+  triggerTitleOpen: 'Hide session list',
+  panelTitle: 'Session hub',
+  headingRunningOnly: '{count} running',
+  headingDoneOnly: '{count} just finished',
+  headingBoth: '{running} running · {done} just finished',
+  groupRunning: 'In progress',
+  groupDone: 'Just finished',
+  current: 'Current',
+  ungrouped: 'Ungrouped',
+  justNow: 'just now',
+  minutesAgo: '{count} min ago',
+  hoursAgo: '{count} h ago',
+  daysAgo: '{count} d ago',
+  openSession: 'Switch to {title}',
+  statusRunning: 'In progress',
+  statusDone: 'Finished, not viewed',
+  footHint: 'Click a session to switch · Esc to close',
+  moreSessions: '{count} more sessions',
+  badgeLabel: '{count} sessions need attention',
+};
+
+const ZH = {
+  pillLabel: '会话中枢',
+  triggerTitle: '展开进行中的会话',
+  triggerTitleOpen: '收起会话列表',
+  panelTitle: '会话中枢',
+  headingRunningOnly: '{count} 个进行中',
+  headingDoneOnly: '{count} 个刚完成',
+  headingBoth: '{running} 个进行中 · {done} 个刚完成',
+  groupRunning: '进行中',
+  groupDone: '刚刚完成',
+  current: '当前',
+  ungrouped: '未分组',
+  justNow: '刚刚',
+  minutesAgo: '{count} 分钟前',
+  hoursAgo: '{count} 小时前',
+  daysAgo: '{count} 天前',
+  openSession: '切换到 {title}',
+  statusRunning: '进行中',
+  statusDone: '已完成，未查看',
+  footHint: '点击会话直接切换 · Esc 收起',
+  moreSessions: '还有 {count} 个会话',
+  badgeLabel: '{count} 个会话需要关注',
+};
+
+/** Identity tints for avatars (artwork colors; never used for chrome). */
+const TINTS = ['#3b6fd4', '#7a5ad6', '#2a8b8b', '#c2624a', '#2f8b53', '#a5761f', '#b9558a', '#5b6b82'];
+
+const MAX_CHIPS = 5;
+
+const CSS = `
+.dsh-sh-root {
+  position: absolute;
+  top: var(--dsh-frame-overlay-top, 11px);
+  left: 50%;
+  z-index: 40;
+  color: var(--dsw-alias-label-primary);
+  font-family: var(--dsw-font-family, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif);
+  font-size: 12px;
+  line-height: 1.4;
+  -webkit-app-region: no-drag;
+  animation: dsh-sh-rise 180ms ease-out both;
+}
+
+.dsh-sh-pill {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  height: 34px;
+  padding: 0 5px;
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 999px;
+  background:
+    linear-gradient(0deg, color-mix(in srgb, var(--dsw-specific-menu, var(--dsw-alias-bg-overlay)) 86%, transparent), color-mix(in srgb, var(--dsw-specific-menu, var(--dsw-alias-bg-overlay)) 86%, transparent)),
+    var(--dsw-alias-bg-layer-1, var(--dsw-alias-bg-base));
+  box-shadow: var(--dsw-elevation-prominent, 0 6px 20px rgb(0 0 0 / 22%));
+  cursor: pointer;
+  user-select: none;
+  transition: border-color 160ms ease, box-shadow 160ms ease;
+}
+.dsh-sh-pill:hover,
+.dsh-sh-pill[data-expanded="true"] {
+  border-color: var(--dsw-alias-border-l2);
+}
+
+.dsh-sh-trigger {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  padding: 0 5px;
+  margin: 0;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.dsh-sh-trigger:hover {
+  background: var(--dsw-alias-interactive-bg-hover, rgb(128 128 128 / 16%));
+}
+.dsh-sh-trigger:focus-visible {
+  outline: var(--dsw-focus-ring-width, 2px) solid var(--dsw-alias-brand-primary);
+  outline-offset: 1px;
+}
+.dsh-sh-glyph {
+  display: block;
+  width: 16px;
+  height: 16px;
+  color: var(--dsw-alias-label-secondary);
+}
+.dsh-sh-pill[data-expanded="true"] .dsh-sh-glyph {
+  color: var(--dsw-alias-label-primary);
+}
+.dsh-sh-count {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border: 1px solid color-mix(in srgb, var(--dsw-alias-brand-primary) 38%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--dsw-alias-brand-primary) 16%, transparent);
+  color: var(--dsw-alias-brand-primary);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.dsh-sh-sep {
+  flex: none;
+  width: 1px;
+  height: 14px;
+  margin: 0 4px;
+  background: var(--dsw-alias-border-l1);
+}
+
+.dsh-sh-chips {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 1px;
+}
+
+.dsh-sh-chip {
+  position: relative;
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 26px;
+  height: 26px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--dsh-sh-tint, var(--dsw-alias-bg-overlay));
+  color: #fff;
+  font-family: inherit;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: -0.2px;
+  cursor: pointer;
+  transition: transform 120ms ease;
+}
+.dsh-sh-chip:hover {
+  transform: translateY(-1px);
+}
+.dsh-sh-chip:focus-visible {
+  outline: var(--dsw-focus-ring-width, 2px) solid var(--dsw-alias-brand-primary);
+  outline-offset: 2px;
+}
+.dsh-sh-chip[data-current="true"] {
+  box-shadow: inset 0 0 0 1.5px var(--dsw-alias-label-primary);
+}
+.dsh-sh-chip[data-running="true"]::after {
+  position: absolute;
+  inset: -3px;
+  border: 1.5px solid var(--dsw-alias-brand-primary);
+  border-radius: 50%;
+  content: "";
+  pointer-events: none;
+  animation: dsh-sh-pulse 1.8s ease-in-out infinite;
+}
+.dsh-sh-chip[data-static="true"] {
+  cursor: default;
+}
+.dsh-sh-chip[data-static="true"]:hover {
+  transform: none;
+}
+
+.dsh-sh-badge {
+  position: absolute;
+  right: -3px;
+  bottom: -3px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--dsw-alias-state-success-primary);
+  color: #fff;
+  box-shadow: 0 0 0 1.5px var(--dsw-alias-bg-layer-1, var(--dsw-specific-menu, var(--dsw-alias-bg-overlay)));
+}
+.dsh-sh-badge svg {
+  display: block;
+  width: 8px;
+  height: 8px;
+}
+
+.dsh-sh-more {
+  box-sizing: border-box;
+  flex: none;
+  height: 26px;
+  min-width: 26px;
+  padding: 0 6px;
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font-family: inherit;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+}
+.dsh-sh-more:hover {
+  border-color: var(--dsw-alias-border-l2);
+  color: var(--dsw-alias-label-primary);
+}
+.dsh-sh-more:focus-visible {
+  outline: var(--dsw-focus-ring-width, 2px) solid var(--dsw-alias-brand-primary);
+  outline-offset: 2px;
+}
+
+.dsh-sh-panel {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 50%;
+  z-index: 2;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  width: min(372px, calc(100vw - 28px));
+  max-height: min(62vh, 480px);
+  overflow: hidden;
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 14px;
+  background:
+    linear-gradient(0deg, var(--dsw-specific-menu, var(--dsw-alias-bg-overlay)), var(--dsw-specific-menu, var(--dsw-alias-bg-overlay))),
+    var(--dsw-alias-bg-layer-1, var(--dsw-alias-bg-base));
+  box-shadow: var(--dsw-elevation-prominent, 0 16px 40px rgb(0 0 0 / 28%));
+  cursor: default;
+  transform: translateX(-50%);
+  transform-origin: top center;
+  animation: dsh-sh-open 140ms ease-out both;
+}
+
+.dsh-sh-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  flex: none;
+  padding: 12px 14px 8px;
+}
+.dsh-sh-headTitle {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 18px;
+}
+.dsh-sh-headMeta {
+  color: var(--dsw-alias-label-secondary);
+  font-size: 11px;
+  line-height: 16px;
+  white-space: nowrap;
+}
+
+.dsh-sh-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 0 6px 6px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--dsw-alias-border-l2) transparent;
+}
+
+.dsh-sh-group + .dsh-sh-group {
+  margin-top: 2px;
+}
+.dsh-sh-groupLabel {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 8px 3px;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 15px;
+}
+.dsh-sh-groupDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--dsw-alias-brand-primary);
+}
+.dsh-sh-groupDot[data-kind="done"] {
+  background: var(--dsw-alias-state-success-primary);
+}
+
+.dsh-sh-row {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 7px 8px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.dsh-sh-row:hover,
+.dsh-sh-row:focus-visible {
+  background: var(--dsw-alias-interactive-bg-hover, rgb(128 128 128 / 14%));
+  outline: none;
+}
+.dsh-sh-rowBody {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  flex: 1;
+  min-width: 0;
+}
+.dsh-sh-rowTitle {
+  overflow: hidden;
+  font-size: 12.5px;
+  font-weight: 500;
+  line-height: 17px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dsh-sh-rowMeta {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 11px;
+  line-height: 15px;
+}
+.dsh-sh-ws {
+  overflow: hidden;
+  max-width: 46%;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dsh-sh-rowTag {
+  flex: none;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--dsw-alias-brand-primary) 15%, transparent);
+  color: var(--dsw-alias-brand-primary);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 14px;
+}
+.dsh-sh-rowGo {
+  display: inline-flex;
+  flex: none;
+  color: var(--dsw-alias-label-secondary);
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+.dsh-sh-row:hover .dsh-sh-rowGo,
+.dsh-sh-row:focus-visible .dsh-sh-rowGo {
+  opacity: 1;
+}
+
+.dsh-sh-foot {
+  flex: none;
+  padding: 7px 14px 9px;
+  border-top: 0.5px solid var(--dsw-alias-border-l1);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 11px;
+  line-height: 15px;
+}
+
+@keyframes dsh-sh-pulse {
+  0%, 100% {
+    opacity: 0.72;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.4;
+    transform: scale(1.12);
+  }
+}
+@keyframes dsh-sh-rise {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+}
+@keyframes dsh-sh-open {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(-4px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0) scale(1);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .dsh-sh-root,
+  .dsh-sh-panel,
+  .dsh-sh-chip[data-running="true"]::after {
+    animation: none;
+  }
+  .dsh-sh-pill,
+  .dsh-sh-chip,
+  .dsh-sh-rowGo {
+    transition: none;
+  }
+}
+`;
+
+const CHECK_PATH = 'M1.4 4.1 3.2 5.9 6.6 2.1';
+const CHEVRON_PATH = 'm6.2 3.6 4.4 4.4-4.4 4.4';
+
+function hubGlyph(h) {
+  return h(
+    'svg',
+    { className: 'dsh-sh-glyph', viewBox: '0 0 16 16', width: 16, height: 16, 'aria-hidden': true, focusable: 'false' },
+    h('path', { d: 'M8 2.1 2.4 5.1 8 8.1l5.6-3L8 2.1Z', fill: 'currentColor', opacity: 0.92 }),
+    h('path', {
+      d: 'm2.4 8 5.6 3 5.6-3',
+      fill: 'none',
+      stroke: 'currentColor',
+      strokeWidth: 1.4,
+      strokeLinecap: 'round',
+      strokeLinejoin: 'round',
+      opacity: 0.62,
+    }),
+    h('path', {
+      d: 'm2.4 10.9 5.6 3 5.6-3',
+      fill: 'none',
+      stroke: 'currentColor',
+      strokeWidth: 1.4,
+      strokeLinecap: 'round',
+      strokeLinejoin: 'round',
+      opacity: 0.34,
+    }),
+  );
+}
+
+function checkBadge(h) {
+  return h(
+    'span',
+    { className: 'dsh-sh-badge', 'aria-hidden': true },
+    h(
+      'svg',
+      { viewBox: '0 0 8 8', width: 8, height: 8 },
+      h('path', {
+        d: CHECK_PATH,
+        fill: 'none',
+        stroke: 'currentColor',
+        strokeWidth: 1.5,
+        strokeLinecap: 'round',
+        strokeLinejoin: 'round',
+      }),
+    ),
+  );
+}
+
+function chevron(h) {
+  return h(
+    'svg',
+    { viewBox: '0 0 16 16', width: 14, height: 14, 'aria-hidden': true, focusable: 'false' },
+    h('path', {
+      d: CHEVRON_PATH,
+      fill: 'none',
+      stroke: 'currentColor',
+      strokeWidth: 1.5,
+      strokeLinecap: 'round',
+      strokeLinejoin: 'round',
+    }),
+  );
+}
+
+function hashTint(seed) {
+  let hash = 0;
+  for (let index = 0; index < seed.length; index += 1) hash = (hash * 31 + seed.charCodeAt(index)) >>> 0;
+  return TINTS[hash % TINTS.length];
+}
+
+function initialsOf(text) {
+  const trimmed = String(text || '').trim();
+  if (trimmed === '') return '·';
+  return Array.from(trimmed).slice(0, 2).join('').toUpperCase();
+}
+
+function relativeLabel(t, timestamp, now) {
+  if (!Number.isFinite(timestamp)) return '';
+  const minutes = Math.max(0, Math.floor((now - timestamp) / 60000));
+  if (minutes < 1) return t('justNow');
+  if (minutes < 60) return t('minutesAgo', { count: minutes });
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return t('hoursAgo', { count: hours });
+  return t('daysAgo', { count: Math.floor(hours / 24) });
+}
+
+function pickChips(running, done) {
+  const limit = MAX_CHIPS;
+  if (done.length === 0) return running.slice(0, limit);
+  if (running.length === 0) return done.slice(0, limit);
+  const reserveDone = Math.min(done.length, Math.max(1, limit - running.length));
+  const runningQuota = Math.max(1, limit - reserveDone);
+  return [...running.slice(0, runningQuota), ...done.slice(0, limit - Math.min(runningQuota, running.length))];
+}
+
+function SessionHub(props) {
+  const { useSessions, useSessionStatus, useWorkspaces, t, openSession } = props;
+  const translate = typeof t === 'function' ? t : (key) => key;
+
+  const ids = useSessions((state) => state.ids);
+  const byId = useSessions((state) => state.byId);
+  const statuses = useSessionStatus((snapshot) => snapshot);
+  const workspaceItems = useWorkspaces((snapshot) => snapshot.items);
+  const archivedIds = useWorkspaces((snapshot) => snapshot.archivedSessionIds);
+
+  const [expanded, setExpanded] = React.useState(false);
+  const [now, setNow] = React.useState(() => Date.now());
+  const rootRef = React.useRef(null);
+  const triggerRef = React.useRef(null);
+  const panelId = React.useId();
+
+  const workspaceBySession = React.useMemo(() => {
+    const map = new Map();
+    for (const workspace of workspaceItems ?? []) {
+      for (const sessionId of workspace.sessionIds ?? []) map.set(sessionId, workspace.title);
+    }
+    return map;
+  }, [workspaceItems]);
+
+  const archived = React.useMemo(() => new Set(archivedIds ?? []), [archivedIds]);
+
+  let currentId;
+  for (const id of ids ?? []) {
+    const row = byId[id];
+    if (row && (row.retainedBy?.mainView ?? 0) > 0) {
+      currentId = id;
+      break;
+    }
+  }
+
+  const running = [];
+  const done = [];
+  for (const id of ids ?? []) {
+    const row = byId[id];
+    if (!row || row.blank || row.origin === 'subagent' || archived.has(id)) continue;
+    const status = statuses.get(id);
+    const isRunning = status && status.running !== undefined ? status.running : row.running;
+    if (isRunning) running.push({ id, row, kind: 'running', isCurrent: id === currentId });
+    else if (status?.completionUnread === true && id !== currentId) done.push({ id, row, kind: 'done', isCurrent: false });
+  }
+  running.sort((left, right) => Number(right.isCurrent) - Number(left.isCurrent) || right.row.updatedAt - left.row.updatedAt);
+  done.sort((left, right) => right.row.updatedAt - left.row.updatedAt);
+
+  const switchable = running.filter((item) => !item.isCurrent).length + done.length;
+  const visible = switchable > 0;
+  const total = running.length + done.length;
+  const chips = pickChips(running, done);
+  const overflow = total - chips.length;
+
+  React.useEffect(() => {
+    if (!visible) return undefined;
+    const timer = setInterval(() => setNow(Date.now()), 30000);
+    return () => clearInterval(timer);
+  }, [visible]);
+
+  React.useEffect(() => {
+    if (!visible && expanded) setExpanded(false);
+  }, [visible, expanded]);
+
+  React.useEffect(() => {
+    if (!expanded) return undefined;
+    const onPointerDown = (event) => {
+      const root = rootRef.current;
+      if (root && !root.contains(event.target)) setExpanded(false);
+    };
+    const onKeyDown = (event) => {
+      if (event.key !== 'Escape') return;
+      setExpanded(false);
+      triggerRef.current?.focus();
+    };
+    document.addEventListener('pointerdown', onPointerDown, true);
+    document.addEventListener('keydown', onKeyDown, true);
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown, true);
+      document.removeEventListener('keydown', onKeyDown, true);
+    };
+  }, [expanded]);
+
+  if (!visible) return null;
+
+  const titleOf = (item) => item.row.title || item.row.displayTitle || item.id;
+  const workspaceOf = (item) => workspaceBySession.get(item.id) || translate('ungrouped');
+  const select = (sessionId) => {
+    setExpanded(false);
+    openSession(sessionId);
+  };
+
+  const chipNode = (item) => {
+    const title = titleOf(item);
+    const tooltip = `${title} · ${workspaceOf(item)} · ${translate(item.kind === 'running' ? 'statusRunning' : 'statusDone')}`;
+    return h(
+      'button',
+      {
+        key: `chip-${item.id}`,
+        type: 'button',
+        className: 'dsh-sh-chip',
+        style: { '--dsh-sh-tint': hashTint(item.id) },
+        'data-running': item.kind === 'running' ? 'true' : undefined,
+        'data-current': item.isCurrent ? 'true' : undefined,
+        title: tooltip,
+        'aria-label': translate('openSession', { title }),
+        onClick: (event) => {
+          event.stopPropagation();
+          select(item.id);
+        },
+      },
+      initialsOf(title),
+      item.kind === 'done' ? checkBadge(h) : null,
+    );
+  };
+
+  const rowNode = (item) => {
+    const title = titleOf(item);
+    const avatar = h(
+      'span',
+      {
+        key: `row-avatar-${item.id}`,
+        className: 'dsh-sh-chip',
+        style: { '--dsh-sh-tint': hashTint(item.id) },
+        'data-running': item.kind === 'running' ? 'true' : undefined,
+        'data-current': item.isCurrent ? 'true' : undefined,
+        'data-static': 'true',
+        'aria-hidden': true,
+      },
+      initialsOf(title),
+      item.kind === 'done' ? checkBadge(h) : null,
+    );
+    return h(
+      'button',
+      {
+        key: `row-${item.id}`,
+        type: 'button',
+        className: 'dsh-sh-row',
+        'data-current': item.isCurrent ? 'true' : undefined,
+        title: translate('openSession', { title }),
+        onClick: () => select(item.id),
+      },
+      avatar,
+      h(
+        'span',
+        { className: 'dsh-sh-rowBody' },
+        h('span', { className: 'dsh-sh-rowTitle' }, title),
+        h(
+          'span',
+          { className: 'dsh-sh-rowMeta' },
+          h('span', { className: 'dsh-sh-ws' }, workspaceOf(item)),
+          h('span', { 'aria-hidden': true }, '·'),
+          h('span', null, relativeLabel(translate, item.row.updatedAt, now)),
+        ),
+      ),
+      item.isCurrent
+        ? h('span', { className: 'dsh-sh-rowTag' }, translate('current'))
+        : h('span', { className: 'dsh-sh-rowGo', 'aria-hidden': true }, chevron(h)),
+    );
+  };
+
+  const heading =
+    running.length > 0 && done.length > 0
+      ? translate('headingBoth', { running: running.length, done: done.length })
+      : running.length > 0
+        ? translate('headingRunningOnly', { count: running.length })
+        : translate('headingDoneOnly', { count: done.length });
+
+  const panel = expanded
+    ? h(
+        'div',
+        {
+          id: panelId,
+          className: 'dsh-sh-panel',
+          role: 'dialog',
+          'aria-label': translate('panelTitle'),
+          onClick: (event) => event.stopPropagation(),
+        },
+        h(
+          'div',
+          { className: 'dsh-sh-head' },
+          h('span', { className: 'dsh-sh-headTitle' }, translate('panelTitle')),
+          h('span', { className: 'dsh-sh-headMeta' }, heading),
+        ),
+        h(
+          'div',
+          { className: 'dsh-sh-scroll' },
+          running.length > 0
+            ? h(
+                'div',
+                { className: 'dsh-sh-group' },
+                h(
+                  'div',
+                  { className: 'dsh-sh-groupLabel' },
+                  h('span', { className: 'dsh-sh-groupDot', 'aria-hidden': true }),
+                  translate('groupRunning'),
+                ),
+                running.map(rowNode),
+              )
+            : null,
+          done.length > 0
+            ? h(
+                'div',
+                { className: 'dsh-sh-group' },
+                h(
+                  'div',
+                  { className: 'dsh-sh-groupLabel' },
+                  h('span', { className: 'dsh-sh-groupDot', 'data-kind': 'done', 'aria-hidden': true }),
+                  translate('groupDone'),
+                ),
+                done.map(rowNode),
+              )
+            : null,
+        ),
+        h('div', { className: 'dsh-sh-foot' }, translate('footHint')),
+      )
+    : null;
+
+  return h(
+    React.Fragment,
+    null,
+    h('style', { dangerouslySetInnerHTML: { __html: CSS } }),
+    h(
+      'div',
+      {
+        ref: rootRef,
+        className: 'dsh-sh-root',
+        'data-dsh-session-hub': 'true',
+        'data-count': String(total),
+        'data-running': String(running.length),
+        'data-done': String(done.length),
+        'data-expanded': expanded ? 'true' : 'false',
+      },
+      h(
+        'div',
+        {
+          className: 'dsh-sh-pill',
+          role: 'group',
+          'aria-label': translate('pillLabel'),
+          'data-expanded': expanded ? 'true' : 'false',
+          onClick: () => setExpanded((value) => !value),
+        },
+        h(
+          'button',
+          {
+            ref: triggerRef,
+            type: 'button',
+            className: 'dsh-sh-trigger',
+            'aria-expanded': expanded,
+            'aria-controls': expanded ? panelId : undefined,
+            'aria-label': translate('badgeLabel', { count: total }),
+            title: expanded ? translate('triggerTitleOpen') : translate('triggerTitle'),
+          },
+          hubGlyph(h),
+          h('span', { className: 'dsh-sh-count', 'aria-hidden': true }, total > 9 ? '9+' : String(total)),
+        ),
+        h('span', { className: 'dsh-sh-sep', 'aria-hidden': true }),
+        h(
+          'div',
+          { className: 'dsh-sh-chips' },
+          chips.map(chipNode),
+          overflow > 0
+            ? h(
+                'button',
+                {
+                  type: 'button',
+                  className: 'dsh-sh-more',
+                  title: translate('moreSessions', { count: overflow }),
+                  'aria-label': translate('moreSessions', { count: overflow }),
+                  onClick: (event) => {
+                    event.stopPropagation();
+                    setExpanded((value) => !value);
+                  },
+                },
+                `+${overflow}`,
+              )
+            : null,
+        ),
+        panel,
+      ),
+    ),
+  );
+}
+
+function apply(ctx) {
+  ctx.effect(() => ctx.locale.register(NS, { zh: ZH, en: EN }), 'session-hub: dictionaries');
+  ctx.slots.inject('shell.overlay', () =>
+    ctx.slots.register(
+      {
+        name: 'shell.overlay',
+        id: 'session-hub.island',
+        order: 40,
+        locale: NS,
+        inject: () => ({
+          openSession: (sessionId) => ctx.uiWorkspace.openSession(sessionId),
+        }),
+      },
+      SessionHub,
+    ),
+  );
+}
+
+    return { inject: ['slots', 'locale', 'uiWorkspace'], apply };
+  },
+});

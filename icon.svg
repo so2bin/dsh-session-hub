@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Session Hub">
+  <defs>
+    <linearGradient id="dsh-session-hub-bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#3b6fd4"/>
+      <stop offset="1" stop-color="#7a5ad6"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="16" fill="url(#dsh-session-hub-bg)"/>
+  <path d="M32 13 14 22.5 32 32l18-9.5L32 13Z" fill="#fff" fill-opacity=".94"/>
+  <path d="m14 32.5 18 9.5 18-9.5" fill="none" stroke="#fff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" opacity=".72"/>
+  <path d="m14 43 18 9.5L50 43" fill="none" stroke="#fff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" opacity=".46"/>
+  <circle cx="48" cy="48" r="6.5" fill="#22c55e" stroke="#fff" stroke-width="2.5"/>
+</svg>

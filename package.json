@@ -1,0 +1,57 @@
+{
+  "name": "dsh-session-hub",
+  "version": "0.1.0",
+  "description": "Floating session island at the top edge of the DSH Web GUI: switch between running and just-finished sessions without opening the sidebar.",
+  "keywords": [
+    "deepseek",
+    "harness",
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "sessions",
+    "session-switcher"
+  ],
+  "icon": "./icon.svg",
+  "license": "MIT",
+  "type": "module",
+  "main": "./index.js",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./package.json": "./package.json",
+    "./locale/*.json": "./locale/*.json"
+  },
+  "files": [
+    "client.js",
+    "cordis.patch.yml",
+    "icon.svg",
+    "index.js",
+    "locale/*.json"
+  ],
+  "scripts": {
+    "check": "node scripts/check.mjs"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/so2bin/dsh-session-hub.git"
+  },
+  "homepage": "https://github.com/so2bin/dsh-session-hub#readme",
+  "bugs": {
+    "url": "https://github.com/so2bin/dsh-session-hub/issues"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": [
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-ui-layout",
+        "@deepseek-ai/dsh-client-ui-session",
+        "@deepseek-ai/dsh-client-ui-workspace"
+      ]
+    }
+  }
+}

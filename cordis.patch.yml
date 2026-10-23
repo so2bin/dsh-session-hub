@@ -1,0 +1,3 @@
+- insert:
+    - id: session-hub
+      name: dsh-session-hub
