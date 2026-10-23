@@ -143,10 +143,10 @@ const CSS = `
   border-radius: 999px;
   background:
     linear-gradient(180deg, color-mix(in srgb, var(--dsw-specific-menu, var(--dsw-alias-bg-overlay)) 60%, transparent), color-mix(in srgb, var(--dsw-alias-bg-layer-1, var(--dsw-alias-bg-base)) 42%, transparent));
-  -webkit-backdrop-filter: blur(18px) saturate(1.55) brightness(1.06);
-  backdrop-filter: blur(18px) saturate(1.55) brightness(1.06);
+  -webkit-backdrop-filter: blur(20px) saturate(1.2);
+  backdrop-filter: blur(20px) saturate(1.2);
   box-shadow:
-    inset 0 1px 0 rgb(255 255 255 / 0.2),
+    inset 0 1px 0 rgb(255 255 255 / 0.09),
     inset 0 -1px 0 rgb(0 0 0 / 0.18),
     var(--dsw-elevation-prominent, 0 6px 20px rgb(0 0 0 / 22%));
   cursor: pointer;
@@ -237,12 +237,12 @@ const CSS = `
 
 .dsh-sh-chip {
   --dsh-sh-chip-glass:
-    inset 0 1px 0 rgb(255 255 255 / 0.58),
-    inset 0 -1px 1px rgb(0 0 0 / 0.28),
-    inset 0 -5px 10px color-mix(in srgb, var(--dsh-sh-tint, #5b6b82) 40%, transparent),
-    0 4px 12px color-mix(in srgb, var(--dsh-sh-tint, #5b6b82) 52%, transparent),
-    0 0 16px color-mix(in srgb, var(--dsh-sh-tint, #5b6b82) 26%, transparent),
-    0 1px 2px rgb(0 0 0 / 0.22);
+    inset 0 1px 0 rgb(255 255 255 / 0.14),
+    inset 0 -1px 1px rgb(0 0 0 / 0.2),
+    inset 0 -5px 10px color-mix(in srgb, var(--dsh-sh-tint, #5b6b82) 16%, transparent),
+    0 4px 12px color-mix(in srgb, var(--dsh-sh-tint, #5b6b82) 26%, transparent),
+    0 0 16px color-mix(in srgb, var(--dsh-sh-tint, #5b6b82) 10%, transparent),
+    0 1px 2px rgb(0 0 0 / 0.16);
   position: relative;
   box-sizing: border-box;
   display: inline-flex;
@@ -253,23 +253,22 @@ const CSS = `
   height: 26px;
   margin: 0;
   padding: 0;
-  border: 1px solid rgb(255 255 255 / 0.44);
+  border: 1px solid rgb(255 255 255 / 0.12);
   border-radius: 999px;
   background:
-    radial-gradient(circle at 30% 20%, rgb(255 255 255 / 0.92) 0 1.2px, rgb(255 255 255 / 0) 2.4px),
-    radial-gradient(120% 110% at 30% 12%, rgb(255 255 255 / 0.46) 0%, rgb(255 255 255 / 0) 55%),
-    linear-gradient(155deg, color-mix(in srgb, var(--dsh-sh-tint, #5b6b82) 74%, transparent) 0%, color-mix(in srgb, var(--dsh-sh-tint, #5b6b82) 38%, transparent) 100%),
-    linear-gradient(180deg, rgb(0 0 0 / 0.06), rgb(0 0 0 / 0.28));
+    radial-gradient(120% 110% at 30% 12%, rgb(255 255 255 / 0.1) 0%, rgb(255 255 255 / 0) 55%),
+    linear-gradient(155deg, color-mix(in srgb, var(--dsh-sh-tint, #5b6b82) 46%, transparent) 0%, color-mix(in srgb, var(--dsh-sh-tint, #5b6b82) 22%, transparent) 100%),
+    linear-gradient(180deg, rgb(0 0 0 / 0.05), rgb(0 0 0 / 0.2));
   box-shadow: var(--dsh-sh-chip-glass);
-  color: #fff;
+  color: rgb(255 255 255 / 0.92);
   font-family: inherit;
   font-size: 10px;
   font-weight: 700;
   line-height: 1;
   letter-spacing: -0.2px;
-  text-shadow: 0 1px 2px rgb(0 0 0 / 0.46), 0 0 8px rgb(0 0 0 / 0.24);
-  -webkit-backdrop-filter: blur(6px) saturate(1.45);
-  backdrop-filter: blur(6px) saturate(1.45);
+  text-shadow: 0 1px 2px rgb(0 0 0 / 0.55);
+  -webkit-backdrop-filter: blur(14px) saturate(1.1);
+  backdrop-filter: blur(14px) saturate(1.1);
   cursor: pointer;
   transition:
     width 220ms cubic-bezier(0.22, 0.8, 0.28, 1),
@@ -284,7 +283,7 @@ const CSS = `
   position: absolute;
   inset: 0;
   border-radius: inherit;
-  background: linear-gradient(115deg, transparent 24%, rgb(255 255 255 / 0.55) 48%, transparent 72%);
+  background: linear-gradient(115deg, transparent 24%, rgb(255 255 255 / 0.16) 48%, transparent 72%);
   background-position: 120% 0;
   background-size: 220% 100%;
   content: "";
@@ -293,7 +292,7 @@ const CSS = `
 }
 .dsh-sh-chip:hover {
   width: 52px;
-  filter: brightness(1.14) saturate(1.1);
+  filter: brightness(1.04) saturate(1.02);
 }
 .dsh-sh-chip:hover::before,
 .dsh-sh-row:hover .dsh-sh-chip::before {
@@ -306,8 +305,8 @@ const CSS = `
 }
 .dsh-sh-chip[data-current="true"] {
   box-shadow:
-    inset 0 0 0 1.5px var(--dsw-alias-label-primary),
-    0 0 12px rgb(255 255 255 / 0.16),
+    inset 0 0 0 1.5px color-mix(in srgb, var(--dsw-alias-label-primary) 78%, transparent),
+    0 0 10px rgb(255 255 255 / 0.05),
     var(--dsh-sh-chip-glass);
 }
 .dsh-sh-chip[data-running="true"]::after {
@@ -322,11 +321,10 @@ const CSS = `
 }
 body:not([data-ds-dark-theme]) .dsh-sh-chip {
   background:
-    radial-gradient(circle at 30% 20%, rgb(255 255 255 / 0.95) 0 1.2px, rgb(255 255 255 / 0) 2.4px),
-    radial-gradient(120% 110% at 30% 12%, rgb(255 255 255 / 0.5) 0%, rgb(255 255 255 / 0) 55%),
-    linear-gradient(155deg, color-mix(in srgb, var(--dsh-sh-tint, #5b6b82) 82%, transparent) 0%, color-mix(in srgb, var(--dsh-sh-tint, #5b6b82) 52%, transparent) 100%),
-    linear-gradient(180deg, rgb(0 0 0 / 0.04), rgb(0 0 0 / 0.3));
-  text-shadow: 0 1px 2px rgb(0 0 0 / 0.55), 0 0 8px rgb(0 0 0 / 0.3);
+    radial-gradient(120% 110% at 30% 12%, rgb(255 255 255 / 0.16) 0%, rgb(255 255 255 / 0) 55%),
+    linear-gradient(155deg, color-mix(in srgb, var(--dsh-sh-tint, #5b6b82) 58%, transparent) 0%, color-mix(in srgb, var(--dsh-sh-tint, #5b6b82) 34%, transparent) 100%),
+    linear-gradient(180deg, rgb(0 0 0 / 0.03), rgb(0 0 0 / 0.2));
+  text-shadow: 0 1px 2px rgb(0 0 0 / 0.5);
 }
 .dsh-sh-chip[data-static="true"] {
   cursor: default;
