@@ -85,7 +85,7 @@ check(JSON.stringify(enKeys) === JSON.stringify(zhKeys), `dictionary keys differ
 
 const used = new Set([...client.matchAll(/\btranslate\('([A-Za-z0-9_]+)'/g)].map((match) => match[1]));
 // Keys selected by a runtime branch instead of a literal call.
-for (const key of ['statusRunning', 'statusDone']) used.add(key);
+for (const key of ['statusRunning', 'statusDone', 'statusRecent']) used.add(key);
 for (const key of used) {
   check(key in en, `missing en translation: ${key}`);
   check(key in zh, `missing zh translation: ${key}`);

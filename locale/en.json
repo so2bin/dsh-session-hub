@@ -1,6 +1,6 @@
 {
   "meta": {
     "title": "Session Hub",
-    "description": "A floating island at the top edge that lists running and just-finished sessions, so you can switch without opening the sidebar."
+    "description": "A floating island at the top edge that lists running, just-finished and recently opened sessions, so you can switch without opening the sidebar."
   }
 }

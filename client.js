@@ -31,8 +31,10 @@ const EN = {
   headingRunningOnly: '{count} running',
   headingDoneOnly: '{count} just finished',
   headingBoth: '{running} running · {done} just finished',
+  headingRecentOnly: '{count} recently opened',
   groupRunning: 'In progress',
   groupDone: 'Just finished',
+  groupRecent: 'Recently opened',
   current: 'Current',
   ungrouped: 'Ungrouped',
   justNow: 'just now',
@@ -42,6 +44,7 @@ const EN = {
   openSession: 'Switch to {title}',
   statusRunning: 'In progress',
   statusDone: 'Finished, not viewed',
+  statusRecent: 'Recently opened',
   footHint: 'Click a session to switch · Esc to close',
   moreSessions: '{count} more sessions',
   badgeLabel: '{count} sessions need attention',
@@ -55,8 +58,10 @@ const ZH = {
   headingRunningOnly: '{count} 个进行中',
   headingDoneOnly: '{count} 个刚完成',
   headingBoth: '{running} 个进行中 · {done} 个刚完成',
+  headingRecentOnly: '{count} 个最近打开',
   groupRunning: '进行中',
   groupDone: '刚刚完成',
+  groupRecent: '最近打开',
   current: '当前',
   ungrouped: '未分组',
   justNow: '刚刚',
@@ -66,6 +71,7 @@ const ZH = {
   openSession: '切换到 {title}',
   statusRunning: '进行中',
   statusDone: '已完成，未查看',
+  statusRecent: '最近打开',
   footHint: '点击会话直接切换 · Esc 收起',
   moreSessions: '还有 {count} 个会话',
   badgeLabel: '{count} 个会话需要关注',
@@ -75,6 +81,13 @@ const ZH = {
 const TINTS = ['#3b6fd4', '#7a5ad6', '#2a8b8b', '#c2624a', '#2f8b53', '#a5761f', '#b9558a', '#5b6b82'];
 
 const MAX_CHIPS = 5;
+
+/** Recently opened sessions shown to the right of the active group. */
+const RECENT_LIMIT = 4;
+
+/** Persisted identity list; only this browser's session ids are stored. */
+const RECENT_STORE_KEY = 'dsh-session-hub:recent';
+const RECENT_STORE_MAX = 12;
 
 const CSS = `
 .dsh-sh-root {
@@ -95,7 +108,7 @@ const CSS = `
   display: flex;
   align-items: center;
   height: 34px;
-  padding: 0 5px;
+  padding: 0 6px;
   border: 1px solid var(--dsw-alias-border-l1);
   border-radius: 999px;
   background:
@@ -104,11 +117,17 @@ const CSS = `
   box-shadow: var(--dsw-elevation-prominent, 0 6px 20px rgb(0 0 0 / 22%));
   cursor: pointer;
   user-select: none;
-  transition: border-color 160ms ease, box-shadow 160ms ease;
+  transition:
+    padding 200ms cubic-bezier(0.22, 0.8, 0.28, 1),
+    border-color 160ms ease,
+    box-shadow 160ms ease;
 }
 .dsh-sh-pill:hover,
+.dsh-sh-pill:focus-within,
 .dsh-sh-pill[data-expanded="true"] {
-  border-color: var(--dsw-alias-border-l2);
+  padding-right: 12px;
+  padding-left: 12px;
+  border-color: color-mix(in srgb, var(--dsw-alias-label-secondary) 45%, transparent);
 }
 
 .dsh-sh-trigger {
@@ -165,6 +184,11 @@ const CSS = `
   height: 14px;
   margin: 0 4px;
   background: var(--dsw-alias-border-l1);
+}
+.dsh-sh-sep[data-strong="true"] {
+  height: 18px;
+  margin: 0 6px;
+  background: color-mix(in srgb, var(--dsw-alias-label-secondary) 45%, transparent);
 }
 
 .dsh-sh-chips {
@@ -342,6 +366,9 @@ const CSS = `
 }
 .dsh-sh-groupDot[data-kind="done"] {
   background: var(--dsw-alias-state-success-primary);
+}
+.dsh-sh-groupDot[data-kind="recent"] {
+  background: var(--dsw-alias-state-idle-primary);
 }
 
 .dsh-sh-row {
@@ -563,6 +590,26 @@ function pickChips(running, done) {
   return [...running.slice(0, runningQuota), ...done.slice(0, limit - Math.min(runningQuota, running.length))];
 }
 
+function readRecentIds() {
+  try {
+    const raw = window.localStorage.getItem(RECENT_STORE_KEY);
+    if (raw === null) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((id) => typeof id === 'string' && id.length > 0).slice(0, RECENT_STORE_MAX);
+  } catch {
+    return [];
+  }
+}
+
+function writeRecentIds(ids) {
+  try {
+    window.localStorage.setItem(RECENT_STORE_KEY, JSON.stringify(ids.slice(0, RECENT_STORE_MAX)));
+  } catch {
+    /* storage can be unavailable (private mode, quota); the in-memory list still works */
+  }
+}
+
 function SessionHub(props) {
   const { useSessions, useSessionStatus, useWorkspaces, t, openSession } = props;
   const translate = typeof t === 'function' ? t : (key) => key;
@@ -574,6 +621,7 @@ function SessionHub(props) {
   const archivedIds = useWorkspaces((snapshot) => snapshot.archivedSessionIds);
 
   const [expanded, setExpanded] = React.useState(false);
+  const [recentIds, setRecentIds] = React.useState(readRecentIds);
   const [now, setNow] = React.useState(() => Date.now());
   const rootRef = React.useRef(null);
   const triggerRef = React.useRef(null);
@@ -588,6 +636,16 @@ function SessionHub(props) {
   }, [workspaceItems]);
 
   const archived = React.useMemo(() => new Set(archivedIds ?? []), [archivedIds]);
+
+  const fallbackRecentIds = React.useMemo(() => {
+    const rows = [];
+    for (const id of ids ?? []) {
+      const row = byId[id];
+      if (row) rows.push(row);
+    }
+    rows.sort((left, right) => (right.updatedAt ?? 0) - (left.updatedAt ?? 0));
+    return rows.map((row) => row.id);
+  }, [ids, byId]);
 
   let currentId;
   for (const id of ids ?? []) {
@@ -611,11 +669,41 @@ function SessionHub(props) {
   running.sort((left, right) => Number(right.isCurrent) - Number(left.isCurrent) || right.row.updatedAt - left.row.updatedAt);
   done.sort((left, right) => right.row.updatedAt - left.row.updatedAt);
 
+  const activeIds = new Set();
+  for (const item of running) activeIds.add(item.id);
+  for (const item of done) activeIds.add(item.id);
+
+  const recent = [];
+  const addRecent = (id) => {
+    if (recent.length >= RECENT_LIMIT) return;
+    if (id === currentId || activeIds.has(id) || archived.has(id)) return;
+    if (recent.some((item) => item.id === id)) return;
+    const row = byId[id];
+    if (!row || row.blank || row.origin === 'subagent') return;
+    recent.push({ id, row, kind: 'recent', isCurrent: false });
+  };
+  for (const id of recentIds) addRecent(id);
+  if (recent.length < RECENT_LIMIT) {
+    for (const id of fallbackRecentIds) addRecent(id);
+  }
+
   const switchable = running.filter((item) => !item.isCurrent).length + done.length;
-  const visible = switchable > 0;
+  const visible = switchable > 0 || recent.length > 0;
   const total = running.length + done.length;
   const chips = pickChips(running, done);
   const overflow = total - chips.length;
+
+  React.useEffect(() => {
+    if (typeof currentId !== 'string') return;
+    setRecentIds((previous) => {
+      if (previous[0] === currentId) return previous;
+      return [currentId, ...previous.filter((id) => id !== currentId)].slice(0, RECENT_STORE_MAX);
+    });
+  }, [currentId]);
+
+  React.useEffect(() => {
+    writeRecentIds(recentIds);
+  }, [recentIds]);
 
   React.useEffect(() => {
     if (!visible) return undefined;
@@ -657,7 +745,8 @@ function SessionHub(props) {
 
   const chipNode = (item) => {
     const title = titleOf(item);
-    const tooltip = `${title} · ${workspaceOf(item)} · ${translate(item.kind === 'running' ? 'statusRunning' : 'statusDone')}`;
+    const statusKey = item.kind === 'recent' ? 'statusRecent' : item.kind === 'done' ? 'statusDone' : 'statusRunning';
+    const tooltip = `${title} · ${workspaceOf(item)} · ${translate(statusKey)}`;
     return h(
       'button',
       {
@@ -665,6 +754,7 @@ function SessionHub(props) {
         type: 'button',
         className: 'dsh-sh-chip',
         style: { '--dsh-sh-tint': hashTint(item.id) },
+        'data-kind': item.kind,
         'data-running': item.kind === 'running' ? 'true' : undefined,
         'data-current': item.isCurrent ? 'true' : undefined,
         title: tooltip,
@@ -687,6 +777,7 @@ function SessionHub(props) {
         key: `row-avatar-${item.id}`,
         className: 'dsh-sh-chip',
         style: { '--dsh-sh-tint': hashTint(item.id) },
+        'data-kind': item.kind,
         'data-running': item.kind === 'running' ? 'true' : undefined,
         'data-current': item.isCurrent ? 'true' : undefined,
         'data-static': 'true',
@@ -729,7 +820,9 @@ function SessionHub(props) {
       ? translate('headingBoth', { running: running.length, done: done.length })
       : running.length > 0
         ? translate('headingRunningOnly', { count: running.length })
-        : translate('headingDoneOnly', { count: done.length });
+        : done.length > 0
+          ? translate('headingDoneOnly', { count: done.length })
+          : translate('headingRecentOnly', { count: recent.length });
 
   const panel = expanded
     ? h(
@@ -776,6 +869,19 @@ function SessionHub(props) {
                 done.map(rowNode),
               )
             : null,
+          recent.length > 0
+            ? h(
+                'div',
+                { className: 'dsh-sh-group', 'data-group': 'recent' },
+                h(
+                  'div',
+                  { className: 'dsh-sh-groupLabel' },
+                  h('span', { className: 'dsh-sh-groupDot', 'data-kind': 'recent', 'aria-hidden': true }),
+                  translate('groupRecent'),
+                ),
+                recent.map(rowNode),
+              )
+            : null,
         ),
         h('div', { className: 'dsh-sh-foot' }, translate('footHint')),
       )
@@ -794,6 +900,7 @@ function SessionHub(props) {
         'data-count': String(total),
         'data-running': String(running.length),
         'data-done': String(done.length),
+        'data-recent': String(recent.length),
         'data-expanded': expanded ? 'true' : 'false',
       },
       h(
@@ -813,34 +920,46 @@ function SessionHub(props) {
             className: 'dsh-sh-trigger',
             'aria-expanded': expanded,
             'aria-controls': expanded ? panelId : undefined,
-            'aria-label': translate('badgeLabel', { count: total }),
+            'aria-label': total > 0 ? translate('badgeLabel', { count: total }) : translate('triggerTitle'),
             title: expanded ? translate('triggerTitleOpen') : translate('triggerTitle'),
           },
           hubGlyph(h),
-          h('span', { className: 'dsh-sh-count', 'aria-hidden': true }, total > 9 ? '9+' : String(total)),
-        ),
-        h('span', { className: 'dsh-sh-sep', 'aria-hidden': true }),
-        h(
-          'div',
-          { className: 'dsh-sh-chips' },
-          chips.map(chipNode),
-          overflow > 0
-            ? h(
-                'button',
-                {
-                  type: 'button',
-                  className: 'dsh-sh-more',
-                  title: translate('moreSessions', { count: overflow }),
-                  'aria-label': translate('moreSessions', { count: overflow }),
-                  onClick: (event) => {
-                    event.stopPropagation();
-                    setExpanded((value) => !value);
-                  },
-                },
-                `+${overflow}`,
-              )
+          total > 0
+            ? h('span', { className: 'dsh-sh-count', 'aria-hidden': true }, total > 9 ? '9+' : String(total))
             : null,
         ),
+        chips.length > 0 || overflow > 0
+          ? h('span', { className: 'dsh-sh-sep', 'aria-hidden': true })
+          : null,
+        chips.length > 0 || overflow > 0
+          ? h(
+              'div',
+              { className: 'dsh-sh-chips' },
+              chips.map(chipNode),
+              overflow > 0
+                ? h(
+                    'button',
+                    {
+                      type: 'button',
+                      className: 'dsh-sh-more',
+                      title: translate('moreSessions', { count: overflow }),
+                      'aria-label': translate('moreSessions', { count: overflow }),
+                      onClick: (event) => {
+                        event.stopPropagation();
+                        setExpanded((value) => !value);
+                      },
+                    },
+                    `+${overflow}`,
+                  )
+                : null,
+            )
+          : null,
+        recent.length > 0
+          ? h('span', { className: 'dsh-sh-sep', 'data-strong': 'true', 'aria-hidden': true })
+          : null,
+        recent.length > 0
+          ? h('div', { className: 'dsh-sh-chips', 'data-group': 'recent' }, recent.map(chipNode))
+          : null,
         panel,
       ),
     ),
