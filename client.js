@@ -232,6 +232,10 @@ const CSS = `
 }
 
 .dsh-sh-chip {
+  --dsh-sh-chip-glass:
+    inset 0 1px 0 rgb(255 255 255 / 0.34),
+    inset 0 -1px 1px rgb(0 0 0 / 0.16),
+    0 2px 6px rgb(0 0 0 / 0.16);
   position: relative;
   box-sizing: border-box;
   display: inline-flex;
@@ -242,15 +246,21 @@ const CSS = `
   height: 26px;
   margin: 0;
   padding: 0;
-  border: 0;
+  border: 1px solid rgb(255 255 255 / 0.22);
   border-radius: 50%;
-  background: var(--dsh-sh-tint, var(--dsw-alias-bg-overlay));
+  background:
+    radial-gradient(120% 110% at 30% 12%, rgb(255 255 255 / 0.3) 0%, rgb(255 255 255 / 0) 55%),
+    linear-gradient(155deg, color-mix(in srgb, var(--dsh-sh-tint, #5b6b82) 92%, transparent) 0%, color-mix(in srgb, var(--dsh-sh-tint, #5b6b82) 68%, transparent) 100%);
+  box-shadow: var(--dsh-sh-chip-glass);
   color: #fff;
   font-family: inherit;
   font-size: 10px;
   font-weight: 700;
   line-height: 1;
   letter-spacing: -0.2px;
+  text-shadow: 0 1px 1px rgb(0 0 0 / 0.28);
+  -webkit-backdrop-filter: blur(10px) saturate(1.35);
+  backdrop-filter: blur(10px) saturate(1.35);
   cursor: pointer;
   transition: transform 120ms ease;
 }
@@ -262,7 +272,7 @@ const CSS = `
   outline-offset: 2px;
 }
 .dsh-sh-chip[data-current="true"] {
-  box-shadow: inset 0 0 0 1.5px var(--dsw-alias-label-primary);
+  box-shadow: inset 0 0 0 1.5px var(--dsw-alias-label-primary), var(--dsh-sh-chip-glass);
 }
 .dsh-sh-chip[data-running="true"]::after {
   position: absolute;
