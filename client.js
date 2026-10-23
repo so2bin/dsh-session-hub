@@ -275,6 +275,11 @@ const CSS = `
     width 220ms cubic-bezier(0.22, 0.8, 0.28, 1),
     filter 140ms ease;
 }
+.dsh-sh-pill .dsh-sh-chip {
+  transition:
+    width 220ms cubic-bezier(0.22, 0.8, 0.28, 1),
+    filter 140ms ease;
+}
 .dsh-sh-chip::before {
   position: absolute;
   inset: 0;
