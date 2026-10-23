@@ -185,20 +185,23 @@ const CSS = `
   flex: none;
   width: 1px;
   height: 14px;
-  margin: 0 4px;
+  margin: 0 6px;
   background: var(--dsw-alias-border-l1);
 }
 .dsh-sh-sep[data-strong="true"] {
   height: 18px;
-  margin: 0 6px;
+  margin: 0 8px;
   background: color-mix(in srgb, var(--dsw-alias-label-secondary) 45%, transparent);
 }
 
 .dsh-sh-chips {
   display: flex;
   align-items: center;
-  gap: 4px;
-  padding: 0 1px;
+  gap: 5px;
+  padding: 0 3px;
+}
+.dsh-sh-chips[data-group="active"] {
+  gap: 8px;
 }
 
 .dsh-sh-chip {
@@ -236,7 +239,7 @@ const CSS = `
 }
 .dsh-sh-chip[data-running="true"]::after {
   position: absolute;
-  inset: -3px;
+  inset: -2px;
   border: 1.5px solid var(--dsw-alias-brand-primary);
   border-radius: 50%;
   content: "";
@@ -1093,7 +1096,7 @@ function SessionHub(props) {
         chips.length > 0 || overflow > 0
           ? h(
               'div',
-              { className: 'dsh-sh-chips' },
+              { className: 'dsh-sh-chips', 'data-group': 'active' },
               chips.map(chipNode),
               overflow > 0
                 ? h(
