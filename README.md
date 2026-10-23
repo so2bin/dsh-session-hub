@@ -14,6 +14,7 @@ DSH 里同时开很多会话、又分散在不同工作区时，切换会话通�
 - **刚刚完成**：会话在后台跑完、而你没有切过去查看，浮岛用绿色对勾标记，直到你打开它才消失；
 - **最近打开**：最多 4 个最近打开过的会话，与上面的活动组用一条竖线隔开，方便快速回到上下文；第一次使用时还没有浏览历史，会用最近活跃的会话补齐；
 - 当前正在查看的会话会标为「当前」，不会让你误切；
+- 悬停头像时，先以彩色徽标显示所在工作区，再显示会话标题与状态；同一个工作区在面板行首的小圆点里使用同一种颜色；
 - 鼠标悬停时浮岛向左、右各展开 6px，并加深边框，方便看清所有头像。
 
 浮岛只在「确实有可切换内容」时出现：没有其他进行中的会话、没有未查看的完成结果、也没有最近打开记录时，它完全隐藏，不占位置、不挡标题。
@@ -25,10 +26,15 @@ DSH 里同时开很多会话、又分散在不同工作区时，切换会话通�
 | 点击头像 | 立即切换到该会话 |
 | 点击左侧层叠图标 / 数字 | 展开或收起会话面板 |
 | 点击 `+N` | 展开完整列表（活动组超过 5 个时） |
-| 鼠标悬停浮岛 | 左右宽度各展开 6px |
+| 悬停头像 | 显示「工作区徽标 + 会话标题 + 状态」浮层 |
+| 悬停浮岛 | 左右宽度各展开 6px |
 | `Esc` / 点击面板外 | 收起面板 |
 
-面板按「进行中」「刚刚完成」「最近打开」分组，每行显示标题、工作区、相对时间和「当前」标记。
+面板按「进行中」「刚刚完成」「最近打开」分组，每行显示标题、工作区（带颜色圆点）、相对时间和「当前」标记。
+
+![悬停提示：工作区在前，颜色区分](docs/tooltip.png)
+
+*悬停头像：先显示所在工作区（每个工作区固定颜色），再显示会话标题和状态。*
 
 ![面板特写：进行中与当前标记](docs/panel.png)
 
@@ -64,6 +70,8 @@ DSH 里同时开很多会话、又分散在不同工作区时，切换会话通�
 - 「最近打开」由插件在浏览器本地记录：主视图切换时把新会话 id 放到队首，最多保存 12 个、展示 4 个，存储键 `dsh-session-hub:recent`（localStorage，仅保存在本机浏览器）。历史不满 4 个时，用最近活跃的会话补齐。
 - 切换动作调用 `ctx.uiWorkspace.openSession(sessionId)`，与侧边栏点击走同一条导航路径。
 - 子智能体会话、空白会话、已归档会话不会出现在任何一组中。
+- 悬停提示是自绘浮层，不再使用浏览器原生 `title`，因此可以在标题前放彩色工作区徽标并显示状态。
+- 工作区颜色由工作区 id 哈希到 HSL 色相（固定饱和度 / 亮度，保证白字可读）；悬停徽标和面板行首圆点使用同一颜色。
 - 悬停动画只改变浮岛左右的 `padding`（6px → 12px），不缩放头像，所以圆形不会变形；`prefers-reduced-motion` 下会关闭过渡。
 - 样式只使用 `--dsw-*` 主题变量，浅色 / 深色主题下都会继承对应配色。
 
@@ -100,7 +108,7 @@ npm run check   # 语法、manifest、locale 一致性、翻译 key 覆盖
 
 ## English
 
-`dsh-session-hub` renders a small floating island at the middle of the top edge of the DSH Web UI. It lists sessions that are currently running (pulsing ring) and sessions that finished while you were elsewhere (green check), across all workspaces. A vertical divider separates them from up to four recently opened sessions, so you can switch with one click without opening the sidebar. Hovering the island widens it by 6px on each side. The island hides itself when there is nothing to switch to, and it never occupies layout space.
+`dsh-session-hub` renders a small floating island at the middle of the top edge of the DSH Web UI. It lists sessions that are currently running (pulsing ring) and sessions that finished while you were elsewhere (green check), across all workspaces. A vertical divider separates them from up to four recently opened sessions, so you can switch with one click without opening the sidebar. Hovering a chip shows a colored workspace badge before the session title and status; hovering the island widens it by 6px on each side. The island hides itself when there is nothing to switch to, and it never occupies layout space.
 
 Install it from **Plugins → Add plugin** with `https://github.com/so2bin/dsh-session-hub` (or a local checkout path), then refresh the page.
 

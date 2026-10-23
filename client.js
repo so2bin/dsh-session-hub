@@ -41,7 +41,7 @@ const EN = {
   minutesAgo: '{count} min ago',
   hoursAgo: '{count} h ago',
   daysAgo: '{count} d ago',
-  openSession: 'Switch to {title}',
+  openSessionLabel: 'Switch to {title} in {workspace}',
   statusRunning: 'In progress',
   statusDone: 'Finished, not viewed',
   statusRecent: 'Recently opened',
@@ -68,7 +68,7 @@ const ZH = {
   minutesAgo: '{count} 分钟前',
   hoursAgo: '{count} 小时前',
   daysAgo: '{count} 天前',
-  openSession: '切换到 {title}',
+  openSessionLabel: '切换到 {workspace} 的会话：{title}',
   statusRunning: '进行中',
   statusDone: '已完成，未查看',
   statusRecent: '最近打开',
@@ -77,8 +77,11 @@ const ZH = {
   badgeLabel: '{count} 个会话需要关注',
 };
 
-/** Identity tints for avatars (artwork colors; never used for chrome). */
+/** Identity tints for session avatars (artwork colors; never used for chrome). */
 const TINTS = ['#3b6fd4', '#7a5ad6', '#2a8b8b', '#c2624a', '#2f8b53', '#a5761f', '#b9558a', '#5b6b82'];
+
+/** Sessions outside a registered workspace keep one neutral identity color. */
+const UNGROUPED_COLOR = '#5b6b82';
 
 const MAX_CHIPS = 5;
 
@@ -415,6 +418,13 @@ const CSS = `
   font-size: 11px;
   line-height: 15px;
 }
+.dsh-sh-wsDot {
+  flex: none;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--dsh-sh-ws-tint, var(--dsw-alias-label-secondary));
+}
 .dsh-sh-ws {
   overflow: hidden;
   max-width: 46%;
@@ -441,6 +451,61 @@ const CSS = `
 .dsh-sh-row:hover .dsh-sh-rowGo,
 .dsh-sh-row:focus-visible .dsh-sh-rowGo {
   opacity: 1;
+}
+
+.dsh-sh-tip {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 50%;
+  z-index: 3;
+  box-sizing: border-box;
+  width: max-content;
+  max-width: min(360px, calc(100vw - 32px));
+  padding: 7px 10px 8px;
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 11px;
+  background:
+    linear-gradient(0deg, var(--dsw-specific-menu, var(--dsw-alias-bg-overlay)), var(--dsw-specific-menu, var(--dsw-alias-bg-overlay))),
+    var(--dsw-alias-bg-layer-1, var(--dsw-alias-bg-base));
+  box-shadow: var(--dsw-elevation-prominent, 0 10px 28px rgb(0 0 0 / 24%));
+  pointer-events: none;
+  transform: translateX(-50%);
+  animation: dsh-sh-tip-in 120ms ease-out both;
+}
+.dsh-sh-tipHead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 3px;
+}
+.dsh-sh-wsBadge {
+  display: inline-block;
+  max-width: 200px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--dsh-sh-ws-tint, var(--dsw-alias-bg-overlay));
+  color: #fff;
+  font-size: 10.5px;
+  font-weight: 600;
+  line-height: 15px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+.dsh-sh-tipStatus {
+  flex: none;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 10.5px;
+  line-height: 15px;
+}
+.dsh-sh-tipTitle {
+  max-width: 340px;
+  color: var(--dsw-alias-label-primary);
+  font-size: 12.5px;
+  font-weight: 500;
+  line-height: 17px;
+  overflow-wrap: anywhere;
 }
 
 .dsh-sh-foot {
@@ -472,6 +537,16 @@ const CSS = `
     transform: translateX(-50%) translateY(0);
   }
 }
+@keyframes dsh-sh-tip-in {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(-3px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+}
 @keyframes dsh-sh-open {
   from {
     opacity: 0;
@@ -485,6 +560,7 @@ const CSS = `
 @media (prefers-reduced-motion: reduce) {
   .dsh-sh-root,
   .dsh-sh-panel,
+  .dsh-sh-tip,
   .dsh-sh-chip[data-running="true"]::after {
     animation: none;
   }
@@ -559,10 +635,26 @@ function chevron(h) {
   );
 }
 
-function hashTint(seed) {
+function hashValue(seed) {
+  const text = String(seed);
   let hash = 0;
-  for (let index = 0; index < seed.length; index += 1) hash = (hash * 31 + seed.charCodeAt(index)) >>> 0;
-  return TINTS[hash % TINTS.length];
+  for (let index = 0; index < text.length; index += 1) hash = (hash * 31 + text.charCodeAt(index)) >>> 0;
+  return hash;
+}
+
+function hashTint(seed) {
+  return TINTS[hashValue(seed) % TINTS.length];
+}
+
+/**
+ * Workspace identity color. A golden-angle hue keeps neighbouring workspace
+ * ids far apart, and the fixed saturation/lightness keeps white badge text
+ * readable in both themes.
+ */
+function workspaceColor(workspaceId) {
+  if (typeof workspaceId !== 'string' || workspaceId === '') return UNGROUPED_COLOR;
+  const hue = Math.round((hashValue(workspaceId) * 137.508) % 360);
+  return `hsl(${hue}, 46%, 40%)`;
 }
 
 function initialsOf(text) {
@@ -622,15 +714,18 @@ function SessionHub(props) {
 
   const [expanded, setExpanded] = React.useState(false);
   const [recentIds, setRecentIds] = React.useState(readRecentIds);
+  const [hoveredId, setHoveredId] = React.useState(null);
   const [now, setNow] = React.useState(() => Date.now());
   const rootRef = React.useRef(null);
   const triggerRef = React.useRef(null);
+  const hideTimer = React.useRef(null);
   const panelId = React.useId();
 
   const workspaceBySession = React.useMemo(() => {
     const map = new Map();
     for (const workspace of workspaceItems ?? []) {
-      for (const sessionId of workspace.sessionIds ?? []) map.set(sessionId, workspace.title);
+      const value = { title: workspace.title, color: workspaceColor(workspace.workspaceId) };
+      for (const sessionId of workspace.sessionIds ?? []) map.set(sessionId, value);
     }
     return map;
   }, [workspaceItems]);
@@ -692,6 +787,7 @@ function SessionHub(props) {
   const total = running.length + done.length;
   const chips = pickChips(running, done);
   const overflow = total - chips.length;
+  const hoveredItem = hoveredId === null ? undefined : [...running, ...done, ...recent].find((item) => item.id === hoveredId);
 
   React.useEffect(() => {
     if (typeof currentId !== 'string') return;
@@ -704,6 +800,23 @@ function SessionHub(props) {
   React.useEffect(() => {
     writeRecentIds(recentIds);
   }, [recentIds]);
+
+  React.useEffect(() => {
+    if (!expanded && visible) return;
+    if (hideTimer.current !== null) {
+      clearTimeout(hideTimer.current);
+      hideTimer.current = null;
+    }
+    setHoveredId(null);
+  }, [expanded, visible]);
+
+  React.useEffect(() => {
+    if (hoveredId !== null && hoveredItem === undefined) setHoveredId(null);
+  }, [hoveredId, hoveredItem]);
+
+  React.useEffect(() => () => {
+    if (hideTimer.current !== null) clearTimeout(hideTimer.current);
+  }, []);
 
   React.useEffect(() => {
     if (!visible) return undefined;
@@ -737,16 +850,34 @@ function SessionHub(props) {
   if (!visible) return null;
 
   const titleOf = (item) => item.row.title || item.row.displayTitle || item.id;
-  const workspaceOf = (item) => workspaceBySession.get(item.id) || translate('ungrouped');
+  const workspaceOf = (item) => workspaceBySession.get(item.id) || { title: translate('ungrouped'), color: UNGROUPED_COLOR };
+  const showTooltip = (item) => {
+    if (hideTimer.current !== null) {
+      clearTimeout(hideTimer.current);
+      hideTimer.current = null;
+    }
+    setHoveredId(item.id);
+  };
+  const hideTooltip = (item) => {
+    if (hideTimer.current !== null) clearTimeout(hideTimer.current);
+    hideTimer.current = setTimeout(() => {
+      hideTimer.current = null;
+      setHoveredId((current) => (current === item.id ? null : current));
+    }, 80);
+  };
   const select = (sessionId) => {
     setExpanded(false);
+    if (hideTimer.current !== null) {
+      clearTimeout(hideTimer.current);
+      hideTimer.current = null;
+    }
+    setHoveredId(null);
     openSession(sessionId);
   };
 
   const chipNode = (item) => {
     const title = titleOf(item);
-    const statusKey = item.kind === 'recent' ? 'statusRecent' : item.kind === 'done' ? 'statusDone' : 'statusRunning';
-    const tooltip = `${title} · ${workspaceOf(item)} · ${translate(statusKey)}`;
+    const workspace = workspaceOf(item);
     return h(
       'button',
       {
@@ -757,8 +888,9 @@ function SessionHub(props) {
         'data-kind': item.kind,
         'data-running': item.kind === 'running' ? 'true' : undefined,
         'data-current': item.isCurrent ? 'true' : undefined,
-        title: tooltip,
-        'aria-label': translate('openSession', { title }),
+        'aria-label': translate('openSessionLabel', { title, workspace: workspace.title }),
+        onMouseEnter: () => showTooltip(item),
+        onMouseLeave: () => hideTooltip(item),
         onClick: (event) => {
           event.stopPropagation();
           select(item.id);
@@ -771,6 +903,7 @@ function SessionHub(props) {
 
   const rowNode = (item) => {
     const title = titleOf(item);
+    const workspace = workspaceOf(item);
     const avatar = h(
       'span',
       {
@@ -793,7 +926,6 @@ function SessionHub(props) {
         type: 'button',
         className: 'dsh-sh-row',
         'data-current': item.isCurrent ? 'true' : undefined,
-        title: translate('openSession', { title }),
         onClick: () => select(item.id),
       },
       avatar,
@@ -804,7 +936,8 @@ function SessionHub(props) {
         h(
           'span',
           { className: 'dsh-sh-rowMeta' },
-          h('span', { className: 'dsh-sh-ws' }, workspaceOf(item)),
+          h('span', { className: 'dsh-sh-wsDot', style: { '--dsh-sh-ws-tint': workspace.color }, 'aria-hidden': true }),
+          h('span', { className: 'dsh-sh-ws' }, workspace.title),
           h('span', { 'aria-hidden': true }, '·'),
           h('span', null, relativeLabel(translate, item.row.updatedAt, now)),
         ),
@@ -823,6 +956,32 @@ function SessionHub(props) {
         : done.length > 0
           ? translate('headingDoneOnly', { count: done.length })
           : translate('headingRecentOnly', { count: recent.length });
+
+  const hoveredWorkspace = hoveredItem ? workspaceOf(hoveredItem) : undefined;
+  const hoveredStatusKey = hoveredItem
+    ? hoveredItem.kind === 'recent'
+      ? 'statusRecent'
+      : hoveredItem.kind === 'done'
+        ? 'statusDone'
+        : 'statusRunning'
+    : undefined;
+  const tooltip = !expanded && hoveredItem !== undefined && hoveredWorkspace !== undefined
+    ? h(
+        'div',
+        { className: 'dsh-sh-tip', 'aria-hidden': 'true' },
+        h(
+          'div',
+          { className: 'dsh-sh-tipHead' },
+          h('span', { className: 'dsh-sh-wsBadge', style: { '--dsh-sh-ws-tint': hoveredWorkspace.color } }, hoveredWorkspace.title),
+          h(
+            'span',
+            { className: 'dsh-sh-tipStatus' },
+            hoveredItem.isCurrent ? `${translate('current')} · ${translate(hoveredStatusKey)}` : translate(hoveredStatusKey),
+          ),
+        ),
+        h('div', { className: 'dsh-sh-tipTitle' }, titleOf(hoveredItem)),
+      )
+    : null;
 
   const panel = expanded
     ? h(
@@ -960,6 +1119,7 @@ function SessionHub(props) {
         recent.length > 0
           ? h('div', { className: 'dsh-sh-chips', 'data-group': 'recent' }, recent.map(chipNode))
           : null,
+        tooltip,
         panel,
       ),
     ),
