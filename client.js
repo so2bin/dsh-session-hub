@@ -254,7 +254,7 @@ const CSS = `
   margin: 0;
   padding: 0;
   border: 1px solid rgb(255 255 255 / 0.44);
-  border-radius: 50%;
+  border-radius: 999px;
   background:
     radial-gradient(circle at 30% 20%, rgb(255 255 255 / 0.92) 0 1.2px, rgb(255 255 255 / 0) 2.4px),
     radial-gradient(120% 110% at 30% 12%, rgb(255 255 255 / 0.46) 0%, rgb(255 255 255 / 0) 55%),
@@ -271,7 +271,9 @@ const CSS = `
   -webkit-backdrop-filter: blur(6px) saturate(1.45);
   backdrop-filter: blur(6px) saturate(1.45);
   cursor: pointer;
-  transition: transform 120ms ease;
+  transition:
+    width 220ms cubic-bezier(0.22, 0.8, 0.28, 1),
+    filter 140ms ease;
 }
 .dsh-sh-chip::before {
   position: absolute;
@@ -285,8 +287,8 @@ const CSS = `
   pointer-events: none;
 }
 .dsh-sh-chip:hover {
+  width: 52px;
   filter: brightness(1.14) saturate(1.1);
-  transform: translateY(-1px) scale(1.045);
 }
 .dsh-sh-chip:hover::before,
 .dsh-sh-row:hover .dsh-sh-chip::before {
@@ -307,7 +309,7 @@ const CSS = `
   position: absolute;
   inset: -2px;
   border: 1.5px solid var(--dsw-alias-brand-primary);
-  border-radius: 50%;
+  border-radius: inherit;
   box-shadow: 0 0 8px color-mix(in srgb, var(--dsw-alias-brand-primary) 60%, transparent);
   content: "";
   pointer-events: none;
@@ -325,8 +327,8 @@ body:not([data-ds-dark-theme]) .dsh-sh-chip {
   cursor: default;
 }
 .dsh-sh-chip[data-static="true"]:hover {
+  width: 26px;
   filter: none;
-  transform: none;
 }
 
 .dsh-sh-badge {
@@ -719,8 +721,8 @@ body:not([data-ds-dark-theme]) .dsh-sh-chip {
     animation: none;
   }
   .dsh-sh-chip:hover {
+    width: 26px;
     filter: none;
-    transform: none;
   }
   .dsh-sh-pill,
   .dsh-sh-chip,
