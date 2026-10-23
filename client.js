@@ -45,6 +45,15 @@ const EN = {
   statusRunning: 'In progress',
   statusDone: 'Finished, not viewed',
   statusRecent: 'Recently opened',
+  livePreview: 'Live preview',
+  lastPreview: 'Latest output',
+  previewLoading: 'Reading latest content…',
+  previewEmpty: 'No text output yet',
+  previewError: 'Preview unavailable',
+  activityThinking: 'Thinking…',
+  activityOutput: 'Streaming output…',
+  activityTool: 'Calling {name}…',
+  activityRunning: 'Working…',
   footHint: 'Click a session to switch · Esc to close',
   moreSessions: '{count} more sessions',
   badgeLabel: '{count} sessions need attention',
@@ -72,6 +81,15 @@ const ZH = {
   statusRunning: '进行中',
   statusDone: '已完成，未查看',
   statusRecent: '最近打开',
+  livePreview: '实时预览',
+  lastPreview: '最近输出',
+  previewLoading: '读取最新内容…',
+  previewEmpty: '暂无文本输出',
+  previewError: '预览暂不可用',
+  activityThinking: '正在思考…',
+  activityOutput: '正在输出…',
+  activityTool: '正在调用 {name}…',
+  activityRunning: '正在运行…',
   footHint: '点击会话直接切换 · Esc 收起',
   moreSessions: '还有 {count} 个会话',
   badgeLabel: '{count} 个会话需要关注',
@@ -91,6 +109,15 @@ const RECENT_LIMIT = 4;
 /** Persisted identity list; only this browser's session ids are stored. */
 const RECENT_STORE_KEY = 'dsh-session-hub:recent';
 const RECENT_STORE_MAX = 12;
+
+/** Hover preview timing and content bounds. */
+const PREVIEW_DELAY_MS = 180;
+const PREVIEW_THROTTLE_MS = 150;
+const PREVIEW_SCAN_LIMIT = 20000;
+const PREVIEW_LIVE_LIMIT = 320;
+const PREVIEW_TEXT_LIMIT = 240;
+const PREVIEW_READY_TIMEOUT_MS = 4000;
+const PREVIEW_SOURCE = 'sessionHubPreview';
 
 const CSS = `
 .dsh-sh-root {
@@ -456,6 +483,9 @@ const CSS = `
   opacity: 1;
 }
 
+.dsh-sh-tip[data-preview="true"] {
+  width: 340px;
+}
 .dsh-sh-tip {
   position: absolute;
   top: calc(100% + 8px);
@@ -510,6 +540,58 @@ const CSS = `
   line-height: 17px;
   overflow-wrap: anywhere;
 }
+.dsh-sh-preview {
+  margin-top: 7px;
+  padding-top: 7px;
+  border-top: 0.5px solid var(--dsw-alias-border-l1);
+}
+.dsh-sh-previewHead {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+.dsh-sh-liveDot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--dsw-alias-state-idle-primary);
+}
+.dsh-sh-liveDot[data-live="true"] {
+  background: var(--dsw-alias-state-success-primary);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--dsw-alias-state-success-primary) 22%, transparent);
+  animation: dsh-sh-live-pulse 1.6s ease-in-out infinite;
+}
+.dsh-sh-previewLabel {
+  color: var(--dsw-alias-label-secondary);
+  font-size: 10.5px;
+  font-weight: 600;
+  line-height: 15px;
+}
+.dsh-sh-previewActivity {
+  margin-left: auto;
+  max-width: 180px;
+  overflow: hidden;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 10.5px;
+  line-height: 15px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dsh-sh-previewText {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 11.5px;
+  line-height: 17px;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
+}
+.dsh-sh-previewText[data-muted="true"] {
+  opacity: 0.8;
+}
 
 .dsh-sh-foot {
   flex: none;
@@ -540,6 +622,16 @@ const CSS = `
     transform: translateX(-50%) translateY(0);
   }
 }
+@keyframes dsh-sh-live-pulse {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.4;
+    transform: scale(0.8);
+  }
+}
 @keyframes dsh-sh-tip-in {
   from {
     opacity: 0;
@@ -564,6 +656,7 @@ const CSS = `
   .dsh-sh-root,
   .dsh-sh-panel,
   .dsh-sh-tip,
+  .dsh-sh-liveDot[data-live="true"],
   .dsh-sh-chip[data-running="true"]::after {
     animation: none;
   }
@@ -705,8 +798,83 @@ function writeRecentIds(ids) {
   }
 }
 
+function assistantText(content) {
+  if (!Array.isArray(content)) return '';
+  let text = '';
+  for (const block of content) {
+    if (block && block.type === 'text' && typeof block.text === 'string') text += block.text;
+  }
+  return text;
+}
+
+function tidyPreviewText(text) {
+  if (typeof text !== 'string' || text === '') return '';
+  return text
+    .replace(/```[\s\S]*?```/g, ' … ')
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, ' … ')
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
+    .replace(/`{1,3}/g, '')
+    .replace(/\*\*/g, '')
+    .replace(/^#{1,6}\s+/gm, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, PREVIEW_TEXT_LIMIT);
+}
+
+/**
+ * Read the newest live or committed assistant text plus the current activity
+ * from a Session event window. Scans only the tail and stops once it has both
+ * a status and some text, so a long session does not cost a full replay.
+ */
+function extractPreview(entries, running) {
+  let activityKey = '';
+  let activityName = '';
+  let liveText = '';
+  let liveAttempt = '';
+  let durableText = '';
+  let durableTool = '';
+  const limit = Math.min(entries.length, PREVIEW_SCAN_LIMIT);
+  for (let offset = 0; offset < limit; offset += 1) {
+    const event = entries[entries.length - 1 - offset]?.event;
+    if (!event) continue;
+    if (event.type === 'assistant/live-chunk') {
+      const chunk = event.data.chunk;
+      const attempt = String(event.data.attemptId ?? '');
+      if (running && activityKey === '') {
+        if (chunk.type === 'tool-call-delta' && chunk.name) {
+          activityKey = 'activityTool';
+          activityName = chunk.name;
+        } else if (chunk.type === 'reasoning-delta') {
+          activityKey = 'activityThinking';
+        } else if (chunk.type === 'text-delta') {
+          activityKey = 'activityOutput';
+        }
+      }
+      if (chunk.type === 'text-delta' && typeof chunk.text === 'string') {
+        if (liveAttempt === '') liveAttempt = attempt;
+        if (attempt === liveAttempt) liveText = (chunk.text + liveText).slice(-PREVIEW_LIVE_LIMIT);
+      }
+    } else if (event.type === 'assistant/message') {
+      if (durableText === '') durableText = assistantText(event.data.message.content);
+    } else if (event.type === 'tool/call') {
+      if (durableTool === '') durableTool = event.data.name || '';
+    }
+    if (activityKey !== '' && (liveText !== '' || durableText !== '')) break;
+  }
+  if (activityKey === '') {
+    if (running && durableTool !== '') {
+      activityKey = 'activityTool';
+      activityName = durableTool;
+    } else if (running) {
+      activityKey = 'activityRunning';
+    }
+  }
+  const rawText = liveText !== '' ? liveText.slice(-PREVIEW_TEXT_LIMIT) : durableText;
+  return { activityKey, activityName, text: tidyPreviewText(rawText), live: liveText !== '' };
+}
+
 function SessionHub(props) {
-  const { useSessions, useSessionStatus, useWorkspaces, t, openSession } = props;
+  const { useSessions, useSessionStatus, useWorkspaces, t, openSession, sessions } = props;
   const translate = typeof t === 'function' ? t : (key) => key;
 
   const ids = useSessions((state) => state.ids);
@@ -718,6 +886,7 @@ function SessionHub(props) {
   const [expanded, setExpanded] = React.useState(false);
   const [recentIds, setRecentIds] = React.useState(readRecentIds);
   const [hoveredId, setHoveredId] = React.useState(null);
+  const [preview, setPreview] = React.useState(null);
   const [now, setNow] = React.useState(() => Date.now());
   const rootRef = React.useRef(null);
   const triggerRef = React.useRef(null);
@@ -816,6 +985,115 @@ function SessionHub(props) {
   React.useEffect(() => {
     if (hoveredId !== null && hoveredItem === undefined) setHoveredId(null);
   }, [hoveredId, hoveredItem]);
+
+  React.useEffect(() => {
+    if (!hoveredId || expanded || !visible || !sessions || typeof sessions.retain !== 'function') {
+      setPreview(null);
+      return undefined;
+    }
+    const item = [...running, ...done, ...recent].find((candidate) => candidate.id === hoveredId);
+    if (!item || item.kind !== 'running') {
+      setPreview(null);
+      return undefined;
+    }
+    const targetId = hoveredId;
+    setPreview({ id: targetId, loading: true, text: '', activityKey: '', activityName: '', live: false });
+    let cancelled = false;
+    let reference = null;
+    let retained = false;
+    let unsubscribe = null;
+    let ready = false;
+    let throttleTimer = null;
+    let readyTimer = null;
+    let lastCompute = 0;
+    let lastSignature = '';
+
+    const read = () => {
+      if (cancelled || !ready || reference === null) return;
+      try {
+        const binding = reference.binding;
+        const window = binding.eventSource.getSnapshot();
+        const runningNow = binding.session.getSnapshot().running;
+        const extracted = extractPreview(window.entries, runningNow);
+        const signature = `${extracted.activityKey}|${extracted.activityName}|${extracted.text}|${extracted.live}`;
+        if (signature === lastSignature) return;
+        lastSignature = signature;
+        setPreview({ id: targetId, loading: false, ...extracted });
+      } catch {
+        if (!cancelled) {
+          setPreview({ id: targetId, loading: false, error: true, text: '', activityKey: '', activityName: '', live: false });
+        }
+      }
+    };
+
+    const schedule = () => {
+      if (cancelled || !ready) return;
+      const now = Date.now();
+      const wait = Math.max(0, PREVIEW_THROTTLE_MS - (now - lastCompute));
+      if (wait === 0) {
+        lastCompute = now;
+        read();
+        return;
+      }
+      if (throttleTimer !== null) return;
+      throttleTimer = setTimeout(() => {
+        throttleTimer = null;
+        lastCompute = Date.now();
+        read();
+      }, wait);
+    };
+
+    const markReady = () => {
+      if (cancelled || ready) return;
+      ready = true;
+      if (readyTimer !== null) {
+        clearTimeout(readyTimer);
+        readyTimer = null;
+      }
+      lastCompute = 0;
+      read();
+    };
+
+    const startTimer = setTimeout(() => {
+      if (cancelled) return;
+      try {
+        const existing = sessions.binding(targetId);
+        if (existing) {
+          reference = { binding: existing };
+          markReady();
+        } else {
+          reference = sessions.retain(targetId, { source: PREVIEW_SOURCE });
+          retained = true;
+          readyTimer = setTimeout(markReady, PREVIEW_READY_TIMEOUT_MS);
+          Promise.resolve(reference.ready).then(markReady).catch(() => {
+            if (cancelled) return;
+            ready = true;
+            setPreview({ id: targetId, loading: false, error: true, text: '', activityKey: '', activityName: '', live: false });
+          });
+        }
+        unsubscribe = reference.binding.eventSource.subscribe(schedule);
+      } catch {
+        if (!cancelled) {
+          setPreview({ id: targetId, loading: false, error: true, text: '', activityKey: '', activityName: '', live: false });
+        }
+      }
+    }, PREVIEW_DELAY_MS);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(startTimer);
+      if (throttleTimer !== null) clearTimeout(throttleTimer);
+      if (readyTimer !== null) clearTimeout(readyTimer);
+      if (typeof unsubscribe === 'function') unsubscribe();
+      if (retained && reference && typeof reference.release === 'function') {
+        try {
+          reference.release();
+        } catch {
+          /* the generation may already be gone */
+        }
+      }
+    };
+  }, [hoveredId, expanded, visible, sessions]);
 
   React.useEffect(() => () => {
     if (hideTimer.current !== null) clearTimeout(hideTimer.current);
@@ -968,10 +1246,44 @@ function SessionHub(props) {
         ? 'statusDone'
         : 'statusRunning'
     : undefined;
+  const previewState = hoveredItem
+    ? hoveredItem.kind === 'running'
+      ? preview && preview.id === hoveredItem.id
+        ? preview
+        : { id: hoveredItem.id, loading: true, text: '', activityKey: '', activityName: '', live: false }
+      : preview && preview.id === hoveredItem.id
+        ? preview
+        : null
+    : null;
+  const previewActivity =
+    previewState && previewState.activityKey === 'activityThinking'
+      ? translate('activityThinking')
+      : previewState && previewState.activityKey === 'activityOutput'
+        ? translate('activityOutput')
+        : previewState && previewState.activityKey === 'activityTool'
+          ? translate('activityTool', { name: previewState.activityName })
+          : previewState && previewState.activityKey === 'activityRunning'
+            ? translate('activityRunning')
+            : '';
+  const previewBody = previewState
+    ? previewState.loading
+      ? translate('previewLoading')
+      : previewState.error
+        ? translate('previewError')
+        : previewState.text
+          ? previewState.text
+          : translate('previewEmpty')
+    : '';
+  const previewMuted = previewState ? previewState.loading === true || previewState.error === true || !previewState.text : true;
+
   const tooltip = !expanded && hoveredItem !== undefined && hoveredWorkspace !== undefined
     ? h(
         'div',
-        { className: 'dsh-sh-tip', 'aria-hidden': 'true' },
+        {
+          className: 'dsh-sh-tip',
+          'data-preview': previewState !== null ? 'true' : undefined,
+          'aria-hidden': 'true',
+        },
         h(
           'div',
           { className: 'dsh-sh-tipHead' },
@@ -983,6 +1295,32 @@ function SessionHub(props) {
           ),
         ),
         h('div', { className: 'dsh-sh-tipTitle' }, titleOf(hoveredItem)),
+        previewState !== null
+          ? h(
+              'div',
+              { className: 'dsh-sh-preview' },
+              h(
+                'div',
+                { className: 'dsh-sh-previewHead' },
+                h('span', {
+                  className: 'dsh-sh-liveDot',
+                  'data-live': hoveredItem.kind === 'running' ? 'true' : undefined,
+                  'aria-hidden': true,
+                }),
+                h(
+                  'span',
+                  { className: 'dsh-sh-previewLabel' },
+                  translate(hoveredItem.kind === 'running' ? 'livePreview' : 'lastPreview'),
+                ),
+                previewActivity !== '' ? h('span', { className: 'dsh-sh-previewActivity' }, previewActivity) : null,
+              ),
+              h(
+                'div',
+                { className: 'dsh-sh-previewText', 'data-muted': previewMuted ? 'true' : undefined },
+                previewBody,
+              ),
+            )
+          : null,
       )
     : null;
 
@@ -1140,6 +1478,7 @@ function apply(ctx) {
         locale: NS,
         inject: () => ({
           openSession: (sessionId) => ctx.uiWorkspace.openSession(sessionId),
+          sessions: ctx.sessions,
         }),
       },
       SessionHub,
@@ -1147,6 +1486,6 @@ function apply(ctx) {
   );
 }
 
-    return { inject: ['slots', 'locale', 'uiWorkspace'], apply };
+    return { inject: ['slots', 'locale', 'uiWorkspace', 'sessions'], apply };
   },
 });

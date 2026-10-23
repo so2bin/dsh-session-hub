@@ -1,6 +1,6 @@
 # 会话中枢 · dsh-session-hub
 
-> 在 DSH Web 窗口上边界中央浮出一枚「会话岛」：正在进行、刚刚完成但还没查看的会话一眼可见；右侧还会带上最近打开的会话。点一下就能切过去，不必再打开侧边栏。
+> 在 DSH Web 窗口上边界中央浮出一枚「会话岛」：正在进行、刚刚完成但还没查看的会话一眼可见；右侧还会带上最近打开的会话。悬停进行中的会话就能预览它的实时输出，点一下就能切过去，不必再打开侧边栏。
 
 ![会话中枢的浮岛](docs/island.png)
 
@@ -15,6 +15,7 @@ DSH 里同时开很多会话、又分散在不同工作区时，切换会话通�
 - **最近打开**：最多 4 个最近打开过的会话，与上面的活动组用一条竖线隔开，方便快速回到上下文；第一次使用时还没有浏览历史，会用最近活跃的会话补齐；
 - 当前正在查看的会话会标为「当前」，不会让你误切；
 - 悬停头像时，先以彩色徽标显示所在工作区，再显示会话标题与状态；同一个工作区在面板行首的小圆点里使用同一种颜色；
+- **实时内容预览**：悬停进行中的会话，浮层会显示当前活动（思考 / 调用工具 / 输出）和最近约 240 字的输出，并随会话实时刷新；移开即释放，不会为最近 / 已完成会话打开历史；
 - 鼠标悬停时浮岛向左、右各展开 6px，并加深边框，方便看清所有头像。
 
 浮岛只在「确实有可切换内容」时出现：没有其他进行中的会话、没有未查看的完成结果、也没有最近打开记录时，它完全隐藏，不占位置、不挡标题。
@@ -26,7 +27,8 @@ DSH 里同时开很多会话、又分散在不同工作区时，切换会话通�
 | 点击头像 | 立即切换到该会话 |
 | 点击左侧层叠图标 / 数字 | 展开或收起会话面板 |
 | 点击 `+N` | 展开完整列表（活动组超过 5 个时） |
-| 悬停头像 | 显示「工作区徽标 + 会话标题 + 状态」浮层 |
+| 悬停进行中头像 | 显示「工作区徽标 + 标题 + 状态 + 实时内容预览」浮层 |
+| 悬停最近 / 已完成头像 | 显示「工作区徽标 + 标题 + 状态」，不加载预览 |
 | 悬停浮岛 | 左右宽度各展开 6px |
 | `Esc` / 点击面板外 | 收起面板 |
 
@@ -34,7 +36,7 @@ DSH 里同时开很多会话、又分散在不同工作区时，切换会话通�
 
 ![悬停提示：工作区在前，颜色区分](docs/tooltip.png)
 
-*悬停头像：先显示所在工作区（每个工作区固定颜色），再显示会话标题和状态。*
+*悬停进行中头像：工作区在前，下面是实时预览（当前活动 + 最新输出，最多 4 行）。*
 
 ![面板特写：进行中与当前标记](docs/panel.png)
 
@@ -62,12 +64,13 @@ DSH 里同时开很多会话、又分散在不同工作区时，切换会话通�
 
 - **纯 Client 插件**：Host 侧 `index.js` 是空 `apply()`，只为让 bundle 进入组合；所有界面都在浏览器里。
 - 注册到 `shell.overlay`（全局浮动层，位于侧边栏与主列之上，且默认点击穿透），因此不占布局、不影响任何列的滚动。
-- 活动状态只来自三个 slot 标准源，不轮询、不自行订阅会话事件：
+- 活动状态只来自三个 slot 标准源，不轮询会话状态：
   - `useSessions`：会话目录、标题、`retainedBy.mainView`（判断当前会话）；
   - `useSessionStatus`：`running` 与 `completionUnread`；
   - `useWorkspaces`：工作区标题与归档集合。
 - 「刚刚完成」直接采用 DSH 的 `completionUnread` 语义：会话在非主视图状态下停止运行即为未读；打开会话后由 DSH 自动清除，插件不维护自己的已读状态。
 - 「最近打开」由插件在浏览器本地记录：主视图切换时把新会话 id 放到队首，最多保存 12 个、展示 4 个，存储键 `dsh-session-hub:recent`（localStorage，仅保存在本机浏览器）。历史不满 4 个时，用最近活跃的会话补齐。
+- 「实时预览」只在进行中会话的 hover 上按需加载：180ms 延迟后借用该会话的 Client binding（当前会话直接借用，其他会话 retain 后 release），订阅事件窗口里的实时 chunk 与 durable `assistant/message`，150ms 节流更新；只扫描最近 20,000 条事件，文本截 240 字并限制 4 行。移开鼠标、打开面板或会话消失时立即释放引用。最近 / 已完成会话不加载预览，避免每次 hover 都打开历史。
 - 切换动作调用 `ctx.uiWorkspace.openSession(sessionId)`，与侧边栏点击走同一条导航路径。
 - 子智能体会话、空白会话、已归档会话不会出现在任何一组中。
 - 悬停提示是自绘浮层，不再使用浏览器原生 `title`，因此可以在标题前放彩色工作区徽标并显示状态。
@@ -84,6 +87,8 @@ DSH 里同时开很多会话、又分散在不同工作区时，切换会话通�
 | `MAX_CHIPS` | 5 | 活动组最多显示几个头像，超出用 `+N` |
 | `RECENT_LIMIT` | 4 | 最近打开组最多显示几个 |
 | `RECENT_STORE_MAX` | 12 | 本地最多保留几条最近打开历史 |
+
+预览相关常量同样在 `client.js` 顶部：`PREVIEW_DELAY_MS`（180ms）、`PREVIEW_THROTTLE_MS`（150ms）、`PREVIEW_TEXT_LIMIT`（240 字）、`PREVIEW_SCAN_LIMIT`（20,000 条事件）。
 
 ## 开发
 
@@ -108,7 +113,7 @@ npm run check   # 语法、manifest、locale 一致性、翻译 key 覆盖
 
 ## English
 
-`dsh-session-hub` renders a small floating island at the middle of the top edge of the DSH Web UI. It lists sessions that are currently running (pulsing ring) and sessions that finished while you were elsewhere (green check), across all workspaces. A vertical divider separates them from up to four recently opened sessions, so you can switch with one click without opening the sidebar. Hovering a chip shows a colored workspace badge before the session title and status; hovering the island widens it by 6px on each side. The island hides itself when there is nothing to switch to, and it never occupies layout space.
+`dsh-session-hub` renders a small floating island at the middle of the top edge of the DSH Web UI. It lists sessions that are currently running (pulsing ring) and sessions that finished while you were elsewhere (green check), across all workspaces. A vertical divider separates them from up to four recently opened sessions, so you can switch with one click without opening the sidebar. Hovering a chip shows a colored workspace badge before the session title and status; hovering a running session also streams its latest activity and output into the same card (throttled, released on leave). Hovering the island widens it by 6px on each side. The island hides itself when there is nothing to switch to, and it never occupies layout space.
 
 Install it from **Plugins → Add plugin** with `https://github.com/so2bin/dsh-session-hub` (or a local checkout path), then refresh the page.
 

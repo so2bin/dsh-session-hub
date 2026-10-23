@@ -1,6 +1,6 @@
 {
   "meta": {
     "title": "Session Hub",
-    "description": "A floating island at the top edge that lists running, just-finished and recently opened sessions. Hovering a chip shows its workspace in a distinct color before the title."
+    "description": "A floating island at the top edge that lists running, just-finished and recently opened sessions. Hovering a chip shows its workspace in a distinct color before the title, and a running session previews its live output."
   }
 }
