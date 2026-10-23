@@ -1,6 +1,6 @@
 {
   "name": "dsh-session-hub",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "description": "Floating session island at the top edge of the DSH Web GUI: switch between running, just-finished and recently opened sessions without opening the sidebar, with a live content preview for running sessions.",
   "keywords": [
     "deepseek",

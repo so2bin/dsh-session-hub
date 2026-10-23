@@ -139,12 +139,16 @@ const CSS = `
   align-items: center;
   height: 34px;
   padding: 0 6px;
-  border: 1px solid var(--dsw-alias-border-l1);
+  border: 1px solid color-mix(in srgb, var(--dsw-alias-border-l1) 72%, transparent);
   border-radius: 999px;
   background:
-    linear-gradient(0deg, color-mix(in srgb, var(--dsw-specific-menu, var(--dsw-alias-bg-overlay)) 86%, transparent), color-mix(in srgb, var(--dsw-specific-menu, var(--dsw-alias-bg-overlay)) 86%, transparent)),
-    var(--dsw-alias-bg-layer-1, var(--dsw-alias-bg-base));
-  box-shadow: var(--dsw-elevation-prominent, 0 6px 20px rgb(0 0 0 / 22%));
+    linear-gradient(180deg, color-mix(in srgb, var(--dsw-specific-menu, var(--dsw-alias-bg-overlay)) 60%, transparent), color-mix(in srgb, var(--dsw-alias-bg-layer-1, var(--dsw-alias-bg-base)) 42%, transparent));
+  -webkit-backdrop-filter: blur(18px) saturate(1.55) brightness(1.06);
+  backdrop-filter: blur(18px) saturate(1.55) brightness(1.06);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.2),
+    inset 0 -1px 0 rgb(0 0 0 / 0.18),
+    var(--dsw-elevation-prominent, 0 6px 20px rgb(0 0 0 / 22%));
   cursor: pointer;
   user-select: none;
   transition:
@@ -233,9 +237,12 @@ const CSS = `
 
 .dsh-sh-chip {
   --dsh-sh-chip-glass:
-    inset 0 1px 0 rgb(255 255 255 / 0.34),
-    inset 0 -1px 1px rgb(0 0 0 / 0.16),
-    0 2px 6px rgb(0 0 0 / 0.16);
+    inset 0 1px 0 rgb(255 255 255 / 0.58),
+    inset 0 -1px 1px rgb(0 0 0 / 0.28),
+    inset 0 -5px 10px color-mix(in srgb, var(--dsh-sh-tint, #5b6b82) 40%, transparent),
+    0 4px 12px color-mix(in srgb, var(--dsh-sh-tint, #5b6b82) 52%, transparent),
+    0 0 16px color-mix(in srgb, var(--dsh-sh-tint, #5b6b82) 26%, transparent),
+    0 1px 2px rgb(0 0 0 / 0.22);
   position: relative;
   box-sizing: border-box;
   display: inline-flex;
@@ -246,11 +253,13 @@ const CSS = `
   height: 26px;
   margin: 0;
   padding: 0;
-  border: 1px solid rgb(255 255 255 / 0.22);
+  border: 1px solid rgb(255 255 255 / 0.44);
   border-radius: 50%;
   background:
-    radial-gradient(120% 110% at 30% 12%, rgb(255 255 255 / 0.3) 0%, rgb(255 255 255 / 0) 55%),
-    linear-gradient(155deg, color-mix(in srgb, var(--dsh-sh-tint, #5b6b82) 92%, transparent) 0%, color-mix(in srgb, var(--dsh-sh-tint, #5b6b82) 68%, transparent) 100%);
+    radial-gradient(circle at 30% 20%, rgb(255 255 255 / 0.92) 0 1.2px, rgb(255 255 255 / 0) 2.4px),
+    radial-gradient(120% 110% at 30% 12%, rgb(255 255 255 / 0.46) 0%, rgb(255 255 255 / 0) 55%),
+    linear-gradient(155deg, color-mix(in srgb, var(--dsh-sh-tint, #5b6b82) 74%, transparent) 0%, color-mix(in srgb, var(--dsh-sh-tint, #5b6b82) 38%, transparent) 100%),
+    linear-gradient(180deg, rgb(0 0 0 / 0.06), rgb(0 0 0 / 0.28));
   box-shadow: var(--dsh-sh-chip-glass);
   color: #fff;
   font-family: inherit;
@@ -258,35 +267,65 @@ const CSS = `
   font-weight: 700;
   line-height: 1;
   letter-spacing: -0.2px;
-  text-shadow: 0 1px 1px rgb(0 0 0 / 0.28);
-  -webkit-backdrop-filter: blur(10px) saturate(1.35);
-  backdrop-filter: blur(10px) saturate(1.35);
+  text-shadow: 0 1px 2px rgb(0 0 0 / 0.46), 0 0 8px rgb(0 0 0 / 0.24);
+  -webkit-backdrop-filter: blur(6px) saturate(1.45);
+  backdrop-filter: blur(6px) saturate(1.45);
   cursor: pointer;
   transition: transform 120ms ease;
 }
+.dsh-sh-chip::before {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(115deg, transparent 24%, rgb(255 255 255 / 0.55) 48%, transparent 72%);
+  background-position: 120% 0;
+  background-size: 220% 100%;
+  content: "";
+  opacity: 0;
+  pointer-events: none;
+}
 .dsh-sh-chip:hover {
-  transform: translateY(-1px);
+  filter: brightness(1.14) saturate(1.1);
+  transform: translateY(-1px) scale(1.045);
+}
+.dsh-sh-chip:hover::before,
+.dsh-sh-row:hover .dsh-sh-chip::before {
+  opacity: 1;
+  animation: dsh-sh-sheen 900ms ease;
 }
 .dsh-sh-chip:focus-visible {
   outline: var(--dsw-focus-ring-width, 2px) solid var(--dsw-alias-brand-primary);
   outline-offset: 2px;
 }
 .dsh-sh-chip[data-current="true"] {
-  box-shadow: inset 0 0 0 1.5px var(--dsw-alias-label-primary), var(--dsh-sh-chip-glass);
+  box-shadow:
+    inset 0 0 0 1.5px var(--dsw-alias-label-primary),
+    0 0 12px rgb(255 255 255 / 0.16),
+    var(--dsh-sh-chip-glass);
 }
 .dsh-sh-chip[data-running="true"]::after {
   position: absolute;
   inset: -2px;
   border: 1.5px solid var(--dsw-alias-brand-primary);
   border-radius: 50%;
+  box-shadow: 0 0 8px color-mix(in srgb, var(--dsw-alias-brand-primary) 60%, transparent);
   content: "";
   pointer-events: none;
   animation: dsh-sh-pulse 1.8s ease-in-out infinite;
+}
+body:not([data-ds-dark-theme]) .dsh-sh-chip {
+  background:
+    radial-gradient(circle at 30% 20%, rgb(255 255 255 / 0.95) 0 1.2px, rgb(255 255 255 / 0) 2.4px),
+    radial-gradient(120% 110% at 30% 12%, rgb(255 255 255 / 0.5) 0%, rgb(255 255 255 / 0) 55%),
+    linear-gradient(155deg, color-mix(in srgb, var(--dsh-sh-tint, #5b6b82) 82%, transparent) 0%, color-mix(in srgb, var(--dsh-sh-tint, #5b6b82) 52%, transparent) 100%),
+    linear-gradient(180deg, rgb(0 0 0 / 0.04), rgb(0 0 0 / 0.3));
+  text-shadow: 0 1px 2px rgb(0 0 0 / 0.55), 0 0 8px rgb(0 0 0 / 0.3);
 }
 .dsh-sh-chip[data-static="true"] {
   cursor: default;
 }
 .dsh-sh-chip[data-static="true"]:hover {
+  filter: none;
   transform: none;
 }
 
@@ -632,6 +671,14 @@ const CSS = `
     transform: translateX(-50%) translateY(0);
   }
 }
+@keyframes dsh-sh-sheen {
+  from {
+    background-position: 120% 0;
+  }
+  to {
+    background-position: -20% 0;
+  }
+}
 @keyframes dsh-sh-live-pulse {
   0%, 100% {
     opacity: 1;
@@ -667,8 +714,13 @@ const CSS = `
   .dsh-sh-panel,
   .dsh-sh-tip,
   .dsh-sh-liveDot[data-live="true"],
+  .dsh-sh-chip::before,
   .dsh-sh-chip[data-running="true"]::after {
     animation: none;
+  }
+  .dsh-sh-chip:hover {
+    filter: none;
+    transform: none;
   }
   .dsh-sh-pill,
   .dsh-sh-chip,
