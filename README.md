@@ -30,11 +30,32 @@ The island appears only when there is something to switch to: no other running s
 | Click an avatar | Switch to that session immediately |
 | Click the layered icon / number on the left | Open or close the session panel |
 | Click `+N` | Open the full list (when the active group has more than 5) |
+| Hover the collapsed island | Widen it into the full pill, translucent → opaque |
+| Drag the island | Move it anywhere; the anchor is remembered across reloads |
 | Hover a running avatar | Workspace badge + title + status + live content preview |
 | Hover a recent / finished avatar | Workspace badge + title + status; no preview |
 | Hover an icon | Widen it from 26px to 52px into a capsule, brighten it and sweep a highlight |
 | Hover the island | Expand 6px on each side |
 | `Esc` / click outside the panel | Close the panel |
+
+### Collapsed by default
+
+The island rests as a small translucent chip — the layered icon plus the session
+count — so it costs a few dozen pixels of the top edge instead of a full row of
+avatars. Hovering it, or focusing it with the keyboard, widens it back into the
+full pill; leaving collapses it again. The hidden half folds through `max-width`
+rather than `display`, so the change reads as one smooth widen instead of a jump
+between two layouts.
+
+### Draggable
+
+Press anywhere on the island and drag. Once the pointer travels more than 4px the
+press becomes a drag, and the click that would otherwise toggle the panel is
+swallowed, so dragging never opens the list by accident. Positions are clamped to
+the viewport and saved to `localStorage["dsh-session-hub:position"]`, so a dragged
+island stays where you put it. A stored anchor that ends up outside the window
+after a resize is pulled back in on the next `resize`. Clear that key to return to
+the centred default.
 
 The panel groups sessions by **Running**, **Just finished** and **Recently opened**. Each row shows the title, workspace (with a colored dot), relative time and the **Current** tag.
 
