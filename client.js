@@ -27,6 +27,7 @@ const EN = {
   pillLabel: 'Session hub',
   triggerTitle: 'Show sessions in progress',
   triggerTitleOpen: 'Hide session list',
+  dragHint: 'Drag to move',
   panelTitle: 'Session hub',
   headingRunningOnly: '{count} running',
   headingDoneOnly: '{count} just finished',
@@ -63,6 +64,7 @@ const ZH = {
   pillLabel: '会话中枢',
   triggerTitle: '展开进行中的会话',
   triggerTitleOpen: '收起会话列表',
+  dragHint: '拖动可移动位置',
   panelTitle: '会话中枢',
   headingRunningOnly: '{count} 个进行中',
   headingDoneOnly: '{count} 个刚完成',
@@ -110,6 +112,15 @@ const RECENT_LIMIT = 4;
 const RECENT_STORE_KEY = 'dsh-session-hub:recent';
 const RECENT_STORE_MAX = 12;
 
+/** Persisted island anchor; absent means the default top-centre position. */
+const POSITION_STORE_KEY = 'dsh-session-hub:position';
+
+/** Pointer travel that turns a press into a drag instead of a click. */
+const DRAG_THRESHOLD_PX = 4;
+
+/** Keep at least this much of the island on screen when clamping a drag. */
+const DRAG_MARGIN_PX = 8;
+
 /** Hover preview timing and content bounds. */
 const PREVIEW_DELAY_MS = 180;
 const PREVIEW_THROTTLE_MS = 150;
@@ -131,6 +142,53 @@ const CSS = `
   line-height: 1.4;
   -webkit-app-region: no-drag;
   animation: dsh-sh-rise 180ms ease-out both;
+}
+
+/* Collapsed island: a small translucent chip that opens on hover or focus.
+   The hidden pieces collapse through max-width rather than display, so the pill
+   widens smoothly instead of snapping between two layouts. */
+.dsh-sh-pill > .dsh-sh-sep,
+.dsh-sh-pill > .dsh-sh-chips {
+  max-width: 760px;
+  opacity: 1;
+  transition:
+    max-width 240ms cubic-bezier(0.22, 0.8, 0.28, 1),
+    margin 240ms cubic-bezier(0.22, 0.8, 0.28, 1),
+    padding 240ms cubic-bezier(0.22, 0.8, 0.28, 1),
+    opacity 150ms ease;
+}
+.dsh-sh-root[data-open="false"] .dsh-sh-pill > .dsh-sh-sep,
+.dsh-sh-root[data-open="false"] .dsh-sh-pill > .dsh-sh-chips {
+  max-width: 0;
+  margin-right: 0;
+  margin-left: 0;
+  padding-right: 0;
+  padding-left: 0;
+  opacity: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+.dsh-sh-root[data-open="false"] .dsh-sh-pill {
+  opacity: 0.55;
+}
+.dsh-sh-root[data-open="false"] .dsh-sh-pill:hover,
+.dsh-sh-root[data-open="false"] .dsh-sh-pill:focus-within {
+  opacity: 1;
+}
+
+/* Dragging: a pinned island uses explicit coordinates, so the centring transform
+   and the entry animation have to stand down. */
+.dsh-sh-root[data-pinned="true"] {
+  animation: none;
+  transform: none;
+  cursor: grab;
+  touch-action: none;
+}
+.dsh-sh-root[data-dragging="true"],
+.dsh-sh-root[data-dragging="true"] .dsh-sh-pill {
+  cursor: grabbing;
+  transition: none;
+  user-select: none;
 }
 
 .dsh-sh-pill {
@@ -857,6 +915,45 @@ function readRecentIds() {
   }
 }
 
+/** Restored island anchor, or null for the default centred position. */
+function readPosition() {
+  try {
+    const raw = window.localStorage.getItem(POSITION_STORE_KEY);
+    if (raw === null) return null;
+    const parsed = JSON.parse(raw);
+    if (parsed === null || typeof parsed !== 'object') return null;
+    if (typeof parsed.x !== 'number' || typeof parsed.y !== 'number') return null;
+    if (!Number.isFinite(parsed.x) || !Number.isFinite(parsed.y)) return null;
+    return { x: parsed.x, y: parsed.y };
+  } catch {
+    return null;
+  }
+}
+
+function writePosition(position) {
+  try {
+    window.localStorage.setItem(POSITION_STORE_KEY, JSON.stringify({ x: Math.round(position.x), y: Math.round(position.y) }));
+  } catch {
+    /* storage can be unavailable (private mode, quota); dragging still works this session */
+  }
+}
+
+/**
+ * Keep the island inside the viewport.
+ *
+ * `width` is the island's current width, which changes when it opens, so the
+ * clamp runs again after an expansion instead of trusting the stored point.
+ */
+function clampIslandPosition(x, y, width) {
+  const margin = DRAG_MARGIN_PX;
+  const maxX = Math.max(margin, window.innerWidth - Math.max(width, 40) - margin);
+  const maxY = Math.max(margin, window.innerHeight - 40 - margin);
+  return {
+    x: Math.min(maxX, Math.max(margin, x)),
+    y: Math.min(maxY, Math.max(margin, y)),
+  };
+}
+
 function writeRecentIds(ids) {
   try {
     window.localStorage.setItem(RECENT_STORE_KEY, JSON.stringify(ids.slice(0, RECENT_STORE_MAX)));
@@ -955,9 +1052,16 @@ function SessionHub(props) {
   const [hoveredId, setHoveredId] = React.useState(null);
   const [preview, setPreview] = React.useState(null);
   const [now, setNow] = React.useState(() => Date.now());
+  /** Hover/focus keeps the pill open without opening the panel. */
+  const [peek, setPeek] = React.useState(false);
+  /** Explicit anchor once the island has been dragged; null = default centred. */
+  const [position, setPosition] = React.useState(readPosition);
+  const [dragging, setDragging] = React.useState(false);
   const rootRef = React.useRef(null);
   const triggerRef = React.useRef(null);
   const hideTimer = React.useRef(null);
+  const dragRef = React.useRef(null);
+  const suppressClickRef = React.useRef(false);
   const panelId = React.useId();
 
   const workspaceBySession = React.useMemo(() => {
@@ -1194,6 +1298,81 @@ function SessionHub(props) {
       document.removeEventListener('keydown', onKeyDown, true);
     };
   }, [expanded]);
+
+  // A stored anchor can fall outside the window after a resize; pull it back in.
+  React.useEffect(() => {
+    if (position === null) return undefined;
+    const onResize = () => {
+      const root = rootRef.current;
+      const width = root === null ? 0 : root.getBoundingClientRect().width;
+      setPosition((current) => (current === null ? current : clampIslandPosition(current.x, current.y, width)));
+    };
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, [position === null]);
+
+  /**
+   * Drag the island. A press only becomes a drag after DRAG_THRESHOLD_PX, so a
+   * plain click still toggles the panel; once it is a drag, the click that
+   * follows pointerup is swallowed so it cannot also toggle.
+   */
+  const onIslandPointerDown = (event) => {
+    if (event.button !== undefined && event.button !== 0) return;
+    const root = rootRef.current;
+    if (root === null) return;
+    const rect = root.getBoundingClientRect();
+    dragRef.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      originX: rect.left,
+      originY: rect.top,
+      width: rect.width,
+      moved: false,
+      last: null,
+    };
+    try {
+      root.setPointerCapture(event.pointerId);
+    } catch {
+      /* pointer capture is best effort; windowless events still work */
+    }
+  };
+
+  const onIslandPointerMove = (event) => {
+    const drag = dragRef.current;
+    if (drag === null || drag.pointerId !== event.pointerId) return;
+    const dx = event.clientX - drag.startX;
+    const dy = event.clientY - drag.startY;
+    if (!drag.moved && Math.abs(dx) + Math.abs(dy) < DRAG_THRESHOLD_PX) return;
+    if (!drag.moved) {
+      drag.moved = true;
+      setDragging(true);
+    }
+    const next = clampIslandPosition(drag.originX + dx, drag.originY + dy, drag.width);
+    drag.last = next;
+    setPosition(next);
+  };
+
+  const onIslandPointerEnd = (event) => {
+    const drag = dragRef.current;
+    if (drag === null || drag.pointerId !== event.pointerId) return;
+    dragRef.current = null;
+    const root = rootRef.current;
+    if (root !== null) {
+      try {
+        root.releasePointerCapture(event.pointerId);
+      } catch {
+        /* already released */
+      }
+    }
+    if (!drag.moved) return;
+    setDragging(false);
+    if (drag.last !== null) writePosition(drag.last);
+    suppressClickRef.current = true;
+    window.setTimeout(() => {
+      suppressClickRef.current = false;
+    }, 0);
+  };
 
   if (!visible) return null;
 
@@ -1454,6 +1633,10 @@ function SessionHub(props) {
       )
     : null;
 
+  // The pill shows its full width while hovered, focused, or with the panel open;
+  // otherwise it stays a compact translucent chip.
+  const openIsland = peek || expanded;
+
   return h(
     React.Fragment,
     null,
@@ -1469,6 +1652,10 @@ function SessionHub(props) {
         'data-done': String(done.length),
         'data-recent': String(recent.length),
         'data-expanded': expanded ? 'true' : 'false',
+        'data-open': openIsland ? 'true' : 'false',
+        'data-pinned': position === null ? 'false' : 'true',
+        'data-dragging': dragging ? 'true' : 'false',
+        style: position === null ? undefined : { left: `${position.x}px`, top: `${position.y}px` },
       },
       h(
         'div',
@@ -1477,7 +1664,21 @@ function SessionHub(props) {
           role: 'group',
           'aria-label': translate('pillLabel'),
           'data-expanded': expanded ? 'true' : 'false',
-          onClick: () => setExpanded((value) => !value),
+          'data-open': openIsland ? 'true' : 'false',
+          onClick: () => {
+            // A completed drag must not also toggle the panel.
+            if (suppressClickRef.current) return;
+            setExpanded((value) => !value);
+          },
+          onMouseEnter: () => setPeek(true),
+          onMouseLeave: () => setPeek(false),
+          onFocusCapture: () => setPeek(true),
+          onBlurCapture: () => setPeek(false),
+          onPointerDown: onIslandPointerDown,
+          onPointerMove: onIslandPointerMove,
+          onPointerUp: onIslandPointerEnd,
+          onPointerCancel: onIslandPointerEnd,
+          title: position === null ? translate('dragHint') : undefined,
         },
         h(
           'button',
